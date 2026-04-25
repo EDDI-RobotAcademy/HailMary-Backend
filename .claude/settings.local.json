@@ -4,7 +4,10 @@
       "Bash(xargs ls *)",
       "Bash(xargs grep *)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:api.github.com)"
+      "WebFetch(domain:api.github.com)",
+      "Bash(docker exec *)",
+      "Bash(rm alembic/versions/f96ac47bd04a_init_user_domain.py)",
+      "Bash(alembic revision *)"
     ]
   }
 }

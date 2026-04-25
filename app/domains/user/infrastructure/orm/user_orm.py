@@ -1,5 +1,4 @@
 from datetime import date, time
-from typing import Optional
 
 from sqlalchemy import Boolean, Date, Enum, String, Time
 from sqlalchemy.orm import Mapped, mapped_column
@@ -18,6 +17,6 @@ class UserORM(Base):
     calendar_type: Mapped[CalendarType] = mapped_column(
         Enum(CalendarType, values_callable=lambda e: [x.value for x in e])
     )
-    birth_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    birth_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     birth_time_unknown: Mapped[bool] = mapped_column(Boolean, default=False)
-    name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True)

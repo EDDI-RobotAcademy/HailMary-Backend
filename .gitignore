@@ -44,6 +44,9 @@ alembic/versions/*.pyc
 # FortuneTeller (별도 레포, 각자 클론)
 fortuneteller-main/
 
+# 로컬 테스트 결과 문서
+docs/db-test-result.md
+
 # OS
 .DS_Store
 Thumbs.db
