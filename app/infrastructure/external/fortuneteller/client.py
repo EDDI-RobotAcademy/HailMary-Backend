@@ -14,7 +14,7 @@ class FortuneTellerClient:
     async def analyze(self, payload: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await client.post(f"{self._base_url}/api/saju/analyze", json=payload)
+                resp = await client.post(f"{self._base_url}/api/saju/free", json=payload)
                 resp.raise_for_status()
             except httpx.HTTPStatusError as e:
                 raise FortuneTellerError(f"FortuneTeller 오류 {e.response.status_code}") from e

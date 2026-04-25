@@ -41,6 +41,9 @@ htmlcov/
 # Alembic
 alembic/versions/*.pyc
 
+# FortuneTeller (별도 레포, 각자 클론)
+fortuneteller-main/
+
 # OS
 .DS_Store
 Thumbs.db
