@@ -55,3 +55,4 @@ docs/db-test-result.md
 .DS_Store
 Thumbs.db
 docs/
+package-lock.json
