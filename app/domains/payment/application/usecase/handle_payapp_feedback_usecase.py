@@ -1,14 +1,20 @@
 """PayApp webhook(feedbackurl) 처리 UseCase.
 
 PayApp → BE 호출. linkkey/linkval/price 검증 후 pay_state 별로 payment 상태 갱신.
-결제완료(pay_state=4) 시 PaidReport 합성 + Amplitude 트래킹.
+결제완료(pay_state=4) 시 PaidReport 합성 + Amplitude 트래킹(payment_completed).
+- pay_type 으로 결제수단(카드/카카오페이/페이코/애플페이/계좌이체 등)을 사후 식별.
+- gender/birth_year(연령대)를 인구통계 속성으로 동봉.
+금액 변조 의심(price ≠ DB amount) 시 payment_amount_mismatch 발화.
 멱등성: 같은 (order_id, pay_state) 중복 처리 방지.
+
+⚠️ Amplitude 발화는 반드시 await (구버전 asyncio.create_task는 webhook 응답 후
+GC되어 payment_completed가 간헐 유실됨). safe_* 래퍼가 예외를 swallow하므로
+await해도 PayApp 응답("SUCCESS")을 막지 않는다. → payment_completed = 신뢰 가능한 단일 진실원.
 응답은 반드시 텍스트 "SUCCESS" (HTTP 200) — checkretry=y 라 SUCCESS 아니면 PayApp이 10회 재시도.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -17,6 +23,7 @@ from app.domains.payment.application.payment_ports import (
     PaidReportCreatorPort,
     SajuHashResolverPort,
     UserDemographicsPort,
+    safe_track_payment_amount_mismatch,
     safe_track_payment_completed,
 )
 from app.domains.payment.domain.port.analytics_port import AnalyticsPort
@@ -38,6 +45,36 @@ _PAY_STATE_TO_STATUS: dict[str, PaymentStatus] = {
     "10": PaymentStatus.WAITING_FOR_DEPOSIT,
     "70": PaymentStatus.PARTIAL_CANCELED,
     "71": PaymentStatus.PARTIAL_CANCELED,
+}
+
+# PayApp pay_type 정수 코드 → 사람이 읽는 결제수단 문자열.
+# 사용자가 PayApp 외부 페이지(이미지3)에서 고른 결제수단의 '결과'를 사후적으로 식별.
+# (외부 페이지 클릭 자체는 트래킹 불가하나 webhook이 선택 결과를 돌려줌)
+_PAY_TYPE_TO_METHOD: dict[str, str] = {
+    "1": "card",        # 신용/체크카드
+    "2": "phone",       # 휴대폰결제
+    "4": "face",        # 대면결제
+    "6": "transfer",    # 계좌이체
+    "7": "vbank",       # 가상계좌
+    "15": "kakaopay",
+    "16": "naverpay",
+    "17": "recurring",  # 정기결제
+    "21": "smilepay",
+    "22": "wechat",
+    "23": "applepay",
+    "24": "myaccount",
+    "25": "tosspay",
+    "26": "payco",
+}
+# 간편결제로 분류되는 pay_type → easy_pay_provider 로도 기록.
+_EASY_PAY_METHODS = {
+    "kakaopay",
+    "naverpay",
+    "smilepay",
+    "applepay",
+    "tosspay",
+    "payco",
+    "wechat",
 }
 
 
@@ -109,6 +146,18 @@ class HandlePayAppFeedbackUseCase:
                 payment.amount,
                 received_amount,
             )
+            # 금액 변조 의심 1차 방어선 — Amplitude 발화.
+            # await로 확실 전송(응답 전 완료). safe_* 래퍼가 모든 예외를 swallow하므로
+            # Amplitude 장애가 webhook 응답을 막지 않음.
+            if self._analytics is not None:
+                await safe_track_payment_amount_mismatch(
+                    analytics=self._analytics,
+                    user_id=payment.user_id,
+                    order_id=payment.order_id,
+                    character=payment.character.value,
+                    intended_amount=payment.amount,
+                    received_amount=received_amount,
+                )
             return FeedbackResult(ok=False, reason="amount_mismatch")
 
         # 3. pay_state 매핑
@@ -136,11 +185,25 @@ class HandlePayAppFeedbackUseCase:
 
         # 6. 결제완료 시 후속 처리 (AI 합성 + Amplitude)
         if new_status == PaymentStatus.DONE:
-            await self._trigger_post_payment(updated, mul_no=str(mul_no or ""))
+            await self._trigger_post_payment(
+                updated,
+                mul_no=str(mul_no or ""),
+                pay_type=form.get("pay_type"),
+                card_name=form.get("card_name"),
+                vbank=form.get("vbank"),
+            )
 
         return FeedbackResult(ok=True, reason=f"status_{new_status.value}")
 
-    async def _trigger_post_payment(self, payment: Any, *, mul_no: str) -> None:
+    async def _trigger_post_payment(
+        self,
+        payment: Any,
+        *,
+        mul_no: str,
+        pay_type: Any = None,
+        card_name: Any = None,
+        vbank: Any = None,
+    ) -> None:
         # PaidReport 합성 트리거
         if self._paid_report_creator is not None:
             saju_hash: str | None = None
@@ -161,29 +224,46 @@ class HandlePayAppFeedbackUseCase:
         # Amplitude 트래킹 (fire-and-forget). PayApp 플로엔 device_id/session_id 없음 → None.
         if self._analytics is not None:
             gender: str | None = None
+            birth_year: int | None = None
             if self._user_demographics is not None:
                 try:
                     gender = await self._user_demographics.find_gender_by_user_id(
                         payment.user_id
                     )
+                    birth_year = (
+                        await self._user_demographics.find_birth_year_by_user_id(
+                            payment.user_id
+                        )
+                    )
                 except Exception as e:  # noqa: BLE001
                     logger.warning("user_demographics failed: %s", e)
-            asyncio.create_task(
-                safe_track_payment_completed(
-                    analytics=self._analytics,
-                    user_id=payment.user_id,
-                    device_id=None,
-                    session_id=None,
-                    order_id=payment.order_id,
-                    character=payment.character.value,
-                    amount=payment.amount,
-                    method=None,
-                    easy_pay_provider=None,
-                    card_issuer_code=None,
-                    bank_code=None,
-                    approved_at=payment.approved_at,
-                    gender=gender,
-                )
+
+            # PayApp webhook의 pay_type → 결제수단 식별 (이미지3 선택 결과를 사후 기록).
+            method = _PAY_TYPE_TO_METHOD.get(str(pay_type)) if pay_type else None
+            easy_pay_provider = method if method in _EASY_PAY_METHODS else None
+            # 카드결제면 카드사, 가상계좌면 은행 정보 (PayApp이 줄 때만).
+            card_issuer_code = str(card_name) if (method == "card" and card_name) else None
+            bank_code = str(vbank) if (method == "vbank" and vbank) else None
+
+            # ⚠️ await로 확실 전송 — 구버전은 asyncio.create_task(fire-and-forget)였으나,
+            # 이벤트 루프가 task를 약한 참조로만 보유 → webhook 응답 후 GC되어
+            # payment_completed가 "잡힐 때도 안 잡힐 때도" 있던 근본 원인이었음.
+            # safe_* 래퍼가 모든 예외를 swallow하므로 await해도 결제 응답을 막지 않음.
+            await safe_track_payment_completed(
+                analytics=self._analytics,
+                user_id=payment.user_id,
+                device_id=None,
+                session_id=None,
+                order_id=payment.order_id,
+                character=payment.character.value,
+                amount=payment.amount,
+                method=method,
+                easy_pay_provider=easy_pay_provider,
+                card_issuer_code=card_issuer_code,
+                bank_code=bank_code,
+                approved_at=payment.approved_at,
+                gender=gender,
+                birth_year=birth_year,
             )
 
 
