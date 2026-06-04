@@ -8,7 +8,6 @@ PaidReport 합성 트리거. QA 시 결제 단계를 매번 실행하지 않기 
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -108,29 +107,35 @@ class DevBypassPaymentUseCase:
         # Amplitude 트래킹 (테스트 분석용)
         if self._analytics is not None:
             gender: str | None = None
+            birth_year: int | None = None
             if self._user_demographics is not None:
                 try:
                     gender = await self._user_demographics.find_gender_by_user_id(
                         saved.user_id
                     )
+                    birth_year = (
+                        await self._user_demographics.find_birth_year_by_user_id(
+                            saved.user_id
+                        )
+                    )
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[DEV BYPASS] user_demographics failed: %s", e)
-            asyncio.create_task(
-                safe_track_payment_completed(
-                    analytics=self._analytics,
-                    user_id=saved.user_id,
-                    device_id=None,
-                    session_id=None,
-                    order_id=saved.order_id,
-                    character=saved.character.value,
-                    amount=saved.amount,
-                    method=None,
-                    easy_pay_provider=None,
-                    card_issuer_code=None,
-                    bank_code=None,
-                    approved_at=saved.approved_at,
-                    gender=gender,
-                )
+            # await로 확실 전송 (webhook usecase와 동일 — fire-and-forget GC 유실 방지).
+            await safe_track_payment_completed(
+                analytics=self._analytics,
+                user_id=saved.user_id,
+                device_id=None,
+                session_id=None,
+                order_id=saved.order_id,
+                character=saved.character.value,
+                amount=saved.amount,
+                method="dev_bypass",  # 실 결제수단 없음 — 테스트 구분용
+                easy_pay_provider=None,
+                card_issuer_code=None,
+                bank_code=None,
+                approved_at=saved.approved_at,
+                gender=gender,
+                birth_year=birth_year,
             )
 
         return saved.order_id

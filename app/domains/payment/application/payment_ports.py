@@ -47,9 +47,16 @@ class UserLookupPort(Protocol):
 
 
 class UserDemographicsPort(Protocol):
-    """user_id로 분석용 인구통계(현재는 gender)를 조회하는 hook."""
+    """user_id로 분석용 인구통계(gender / birth_year)를 조회하는 hook.
+
+    PII 정책: 출생 '연도'만 분석 대상. 생년월일 전체·출생시각은 절대 반환 금지.
+    """
 
     async def find_gender_by_user_id(self, user_id: int) -> str | None: ...
+
+    async def find_birth_year_by_user_id(self, user_id: int) -> int | None:
+        """결제자 연령대 분석용 출생연도. user 없으면 None. (연도만 — PII 최소화)"""
+        ...
 
 
 class PaidReportShareLookupPort(Protocol):
@@ -86,6 +93,7 @@ async def safe_track_payment_completed(
     bank_code: str | None,
     approved_at: datetime,
     gender: str | None,
+    birth_year: int | None = None,
 ) -> None:
     """analytics.track_payment_completed 의 모든 예외를 swallow.
 
@@ -105,6 +113,29 @@ async def safe_track_payment_completed(
             bank_code=bank_code,
             approved_at=approved_at,
             gender=gender,
+            birth_year=birth_year,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("analytics.track_payment_completed failed: %s", e)
+
+
+async def safe_track_payment_amount_mismatch(
+    *,
+    analytics: AnalyticsPort,
+    user_id: int,
+    order_id: str,
+    character: str,
+    intended_amount: int,
+    received_amount: int,
+) -> None:
+    """analytics.track_payment_amount_mismatch 의 모든 예외를 swallow (fire-and-forget)."""
+    try:
+        await analytics.track_payment_amount_mismatch(
+            user_id=user_id,
+            order_id=order_id,
+            character=character,
+            intended_amount=intended_amount,
+            received_amount=received_amount,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("analytics.track_payment_amount_mismatch failed: %s", e)

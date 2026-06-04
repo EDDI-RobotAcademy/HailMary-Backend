@@ -4,7 +4,8 @@ payment 도메인의 결제 완료 신호를 Amplitude HTTP API V2 페이로드�
 
 PII 정책 (절대 변경 금지):
 - event_properties 는 화이트리스트 키만 허용.
-- customer_email / 이름 / 전화번호 / 생년월일은 절대 포함 금지.
+- customer_email / 이름 / 전화번호 / 생년월일(전체)은 절대 포함 금지.
+- 단, 출생 '연도'(birth_year)·성별(gender)은 분석용 인구통계로 허용 (연도만, 월·일·시각 금지).
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ class AmplitudeAnalyticsAdapter(AnalyticsPort):
         bank_code: str | None,
         approved_at: datetime,
         gender: str | None,
+        birth_year: int | None = None,
     ) -> None:
         event: dict[str, Any] = {
             "event_type": "payment_completed",
@@ -51,13 +53,47 @@ class AmplitudeAnalyticsAdapter(AnalyticsPort):
                 "paid_at": approved_at.isoformat(),
                 "environment": self._environment,
                 "gender": gender,
+                "birth_year": birth_year,
             },
             "time": int(approved_at.timestamp() * 1000),
             "insert_id": f"payment_completed-{order_id}",
         }
+        # webhook 컨텍스트엔 device_id 없어 FE user property 조인이 약함 →
+        # 결제자 인구통계를 user_properties 로도 직접 set (gender/birth_year 조인 보강).
+        user_props = {
+            k: v
+            for k, v in (("gender", gender), ("birth_year", birth_year))
+            if v is not None
+        }
+        if user_props:
+            event["user_properties"] = {"$set": user_props}
         if device_id:
             event["device_id"] = device_id
         if session_id is not None:
             event["session_id"] = session_id
 
+        await self._client.send_event(event)
+
+    async def track_payment_amount_mismatch(
+        self,
+        *,
+        user_id: int,
+        order_id: str,
+        character: str,
+        intended_amount: int,
+        received_amount: int,
+    ) -> None:
+        event: dict[str, Any] = {
+            "event_type": "payment_amount_mismatch",
+            "user_id": f"user_{user_id}",  # V2 API는 user_id/device_id 중 하나 필수
+            "event_properties": {
+                "character_id": character,
+                "order_id": order_id,
+                "intended_amount": intended_amount,
+                "received_amount": received_amount,
+                "environment": self._environment,
+            },
+            # 시각 정보 없음 → insert_id 만 멱등키로. (Amplitude가 time 자동 부여)
+            "insert_id": f"payment_amount_mismatch-{order_id}-{received_amount}",
+        }
         await self._client.send_event(event)

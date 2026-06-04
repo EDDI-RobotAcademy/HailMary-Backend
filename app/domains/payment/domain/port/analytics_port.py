@@ -28,4 +28,20 @@ class AnalyticsPort(Protocol):
         bank_code: str | None,
         approved_at: datetime,
         gender: str | None,
+        birth_year: int | None = None,
     ) -> None: ...
+
+    async def track_payment_amount_mismatch(
+        self,
+        *,
+        user_id: int,
+        order_id: str,
+        character: str,
+        intended_amount: int,
+        received_amount: int,
+    ) -> None:
+        """결제 금액 변조 의심(webhook price ≠ DB amount) 1차 방어선 신호.
+
+        기본 구현은 no-op — 분석 어댑터가 미구현이어도 안전하게 동작.
+        """
+        ...
