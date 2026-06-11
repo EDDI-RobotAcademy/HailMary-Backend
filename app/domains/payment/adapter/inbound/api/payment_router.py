@@ -194,6 +194,8 @@ async def dev_bypass_payment(
             character=body.character,
             customer_email=body.customer_email,
             account_id=account_id,
+            device_id=body.device_id,
+            session_id=body.session_id,
         )
     except ValueError as e:
         raise HTTPException(

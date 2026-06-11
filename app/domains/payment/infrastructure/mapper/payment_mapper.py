@@ -23,6 +23,8 @@ class PaymentMapper:
             email_confirmed_at=entity.email_confirmed_at,
             result_email_sent_at=entity.result_email_sent_at,
             account_id=entity.account_id,
+            device_id=entity.device_id,
+            session_id=entity.session_id,
         )
 
     @staticmethod
@@ -45,4 +47,6 @@ class PaymentMapper:
             email_confirmed_at=orm.email_confirmed_at,
             result_email_sent_at=orm.result_email_sent_at,
             account_id=orm.account_id,
+            device_id=orm.device_id,
+            session_id=orm.session_id,
         )

@@ -244,7 +244,9 @@ class HandlePayAppFeedbackUseCase:
             except Exception as e:  # noqa: BLE001
                 logger.warning("paid_report_creator failed: %s", e)
 
-        # Amplitude 트래킹 (fire-and-forget). PayApp 플로엔 device_id/session_id 없음 → None.
+        # Amplitude 트래킹. device_id/session_id는 결제 요청 시점에 FE가 보내 Payment에
+        # 저장해둔 값 — 이걸 실어야 payment_completed가 FE 유저 흐름과 이어진다.
+        # (NULL이면 구버전 FE 주문 — user_id 단독 발화로 폴백.)
         if self._analytics is not None:
             gender: str | None = None
             birth_year: int | None = None
@@ -275,8 +277,8 @@ class HandlePayAppFeedbackUseCase:
             await safe_track_payment_completed(
                 analytics=self._analytics,
                 user_id=payment.user_id,
-                device_id=None,
-                session_id=None,
+                device_id=payment.device_id,
+                session_id=payment.session_id,
                 order_id=payment.order_id,
                 character=payment.character.value,
                 amount=payment.amount,

@@ -72,6 +72,7 @@ class RequestPaymentUseCase:
 
         # 5. payment(status=READY) 저장. payment_key 자리에 PayApp mul_no 박음 (식별자 역할).
         # approved_at은 실제 결제완료 webhook 시점에 갱신.
+        # device_id/session_id: webhook payment_completed 발화 때 FE 유저와 잇는 Amplitude 식별자.
         now = datetime.now(UTC)
         payment = Payment.from_approval(
             payment_key=result.mul_no,
@@ -83,6 +84,8 @@ class RequestPaymentUseCase:
             customer_email=request.customer_email,
             approved_at=now,
             account_id=account_id,
+            device_id=request.device_id,
+            session_id=request.session_id,
         )
         await self._repo.save(payment)
 

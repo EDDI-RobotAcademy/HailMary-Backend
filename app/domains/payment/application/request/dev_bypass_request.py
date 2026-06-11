@@ -11,3 +11,6 @@ class DevBypassRequest(BaseModel):
     session_token: str = Field(alias="sessionToken", min_length=1)
     character: CharacterCode
     customer_email: EmailStr = Field(alias="customerEmail")
+    # Amplitude 깔때기 조인용 (선택)
+    device_id: str | None = Field(default=None, alias="deviceId")
+    session_id: int | None = Field(default=None, alias="sessionId")

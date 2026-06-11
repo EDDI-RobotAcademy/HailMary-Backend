@@ -59,6 +59,8 @@ async def grant_paid_report(
     method: str | None = None,
     background_composer: Callable[..., Coroutine[Any, Any, None]] | None = None,
     account_id: int | None = None,
+    device_id: str | None = None,
+    session_id: int | None = None,
 ) -> Payment:
     """DONE 결제를 생성하고 유료 결과지 합성을 트리거한다. 저장된 Payment 반환.
 
@@ -78,6 +80,8 @@ async def grant_paid_report(
         customer_email=customer_email,
         approved_at=now,
         account_id=account_id,  # 로그인 시 계정 귀속 → 보관함 노출 (HM-BE-80)
+        device_id=device_id,  # Amplitude FE 유저 연결 — payment_completed 발화에 사용
+        session_id=session_id,
     )
     saved = await repo.save(payment)
     logger.warning(
@@ -134,8 +138,8 @@ async def grant_paid_report(
         await safe_track_payment_completed(
             analytics=analytics,
             user_id=saved.user_id,
-            device_id=None,
-            session_id=None,
+            device_id=saved.device_id,
+            session_id=saved.session_id,
             order_id=saved.order_id,
             character=saved.character.value,
             amount=saved.amount,

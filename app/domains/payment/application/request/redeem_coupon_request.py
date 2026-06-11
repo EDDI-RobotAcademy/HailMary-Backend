@@ -15,3 +15,6 @@ class RedeemCouponRequest(BaseModel):
     character: CharacterCode
     customer_email: EmailStr = Field(alias="customerEmail")
     code: str = Field(min_length=1, max_length=64)
+    # Amplitude 깔때기 조인용 (선택)
+    device_id: str | None = Field(default=None, alias="deviceId")
+    session_id: int | None = Field(default=None, alias="sessionId")

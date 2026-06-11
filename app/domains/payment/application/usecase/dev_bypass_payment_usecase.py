@@ -60,6 +60,8 @@ class DevBypassPaymentUseCase:
         character: CharacterCode,
         customer_email: str,
         account_id: int | None = None,
+        device_id: str | None = None,
+        session_id: int | None = None,
     ) -> str:
         """결제 통과 처리. 응답: orderId (FE가 /saju/paid/{orderId}/loading 로 이동)."""
         user_id = await self._user_lookup.find_user_id_by_session_token(session_token)
@@ -82,5 +84,7 @@ class DevBypassPaymentUseCase:
             log_tag="DEV BYPASS",
             method="dev_bypass",  # 실 결제수단 없음 — 테스트 구분용 (HMDA-42)
             account_id=account_id,  # 로그인 시 보관함 귀속
+            device_id=device_id,  # Amplitude FE 유저 연결
+            session_id=session_id,
         )
         return saved.order_id

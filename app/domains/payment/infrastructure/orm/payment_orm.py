@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domains.payment.domain.value_object.payment_status import (
@@ -57,3 +57,7 @@ class PaymentORM(Base):
     result_email_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Amplitude 식별자 (결제 요청 시점 FE 값). webhook payment_completed 발화 시 사용.
+    # session_id는 epoch ms — int32 초과하므로 BigInteger. NULL=미전달(구버전 FE/직접 호출).
+    device_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

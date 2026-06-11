@@ -53,6 +53,8 @@ async def redeem_coupon(
             customer_email=body.customer_email,
             code=body.code,
             account_id=account_id,
+            device_id=body.device_id,
+            session_id=body.session_id,
         )
     except CouponNotRedeemableError as e:
         raise HTTPException(
