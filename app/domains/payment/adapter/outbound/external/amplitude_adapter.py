@@ -41,7 +41,6 @@ class AmplitudeAnalyticsAdapter(AnalyticsPort):
     ) -> None:
         event: dict[str, Any] = {
             "event_type": "payment_completed",
-            "user_id": f"user_{user_id}",
             "event_properties": {
                 "character_id": character,
                 "order_id": order_id,
@@ -54,11 +53,12 @@ class AmplitudeAnalyticsAdapter(AnalyticsPort):
                 "environment": self._environment,
                 "gender": gender,
                 "birth_year": birth_year,
+                # DB 조인 키 — 식별자(user_id)가 아니라 이벤트 속성으로만 보존.
+                "user_db_id": user_id,
             },
             "time": int(approved_at.timestamp() * 1000),
             "insert_id": f"payment_completed-{order_id}",
         }
-        # webhook 컨텍스트엔 device_id 없어 FE user property 조인이 약함 →
         # 결제자 인구통계를 user_properties 로도 직접 set (gender/birth_year 조인 보강).
         user_props = {
             k: v
@@ -67,8 +67,15 @@ class AmplitudeAnalyticsAdapter(AnalyticsPort):
         }
         if user_props:
             event["user_properties"] = {"$set": user_props}
+        # 식별 정책 (HMDA-46 후속): device_id가 있으면 user_id를 싣지 않는다.
+        # DB users.id는 사주 제출마다 새로 생겨 사람 단위 고정값이 아니므로, Amplitude
+        # user_id로 쓰면(user_607/user_609...) 같은 device의 FE 흐름과 별개 유저로 분리된다.
+        # device_id 단독 전송 → Amplitude가 해당 device의 기존 유저로 머지(흐름 유지).
+        # device_id 없는 구버전 주문만 user_{N} 폴백 (V2 API는 둘 중 하나 필수).
         if device_id:
             event["device_id"] = device_id
+        else:
+            event["user_id"] = f"user_{user_id}"
         if session_id is not None:
             event["session_id"] = session_id
 
