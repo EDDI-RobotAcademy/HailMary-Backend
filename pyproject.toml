@@ -23,6 +23,7 @@ dependencies = [
     "boto3>=1.35.0",
     "redis>=5.0.0",
     "pyjwt>=2.9.0",
+    "portone-server-sdk>=0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +55,11 @@ plugins = ["pydantic.mypy"]
 # botocore 는 PyPI 타입 stub 없음 (boto3-stubs는 boto3 표면만 커버). 직접 import 만 ignore.
 [[tool.mypy.overrides]]
 module = ["botocore.*"]
+ignore_missing_imports = true
+
+# portone-server-sdk 는 동적 생성 모듈(payment/webhook 서브모듈)이라 mypy가 추적 불가.
+[[tool.mypy.overrides]]
+module = ["portone_server_sdk.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

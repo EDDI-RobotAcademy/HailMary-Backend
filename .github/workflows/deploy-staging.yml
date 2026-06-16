@@ -71,6 +71,12 @@ jobs:
           TEST_LOGIN_ENABLED=${{ secrets.TEST_LOGIN_ENABLED }}
           TEST_LOGIN_USERNAME=${{ secrets.TEST_LOGIN_USERNAME }}
           TEST_LOGIN_PASSWORD=${{ secrets.TEST_LOGIN_PASSWORD }}
+          PORTONE_ENABLED=${{ secrets.PORTONE_ENABLED }}
+          PORTONE_API_SECRET=${{ secrets.PORTONE_API_SECRET }}
+          PORTONE_STORE_ID=${{ secrets.PORTONE_STORE_ID }}
+          PORTONE_CHANNEL_KEY=${{ secrets.PORTONE_CHANNEL_KEY }}
+          PORTONE_WEBHOOK_SECRET=${{ secrets.PORTONE_WEBHOOK_SECRET }}
+          PORTONE_ALLOW_TEST_CHANNEL=${{ secrets.PORTONE_ALLOW_TEST_CHANNEL }}
           EOF
 
       - name: Install dependencies (uv sync)

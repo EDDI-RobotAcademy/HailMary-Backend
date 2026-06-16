@@ -198,10 +198,17 @@ from app.domains.payment.adapter.inbound.api.payment_router import (
 from app.domains.payment.adapter.inbound.api.payment_router import (
     router as payment_router,
 )
+from app.domains.payment.adapter.inbound.api.portone_router import (
+    get_complete_portone_usecase,
+)
+from app.domains.payment.adapter.inbound.api.portone_router import (
+    router as portone_router,
+)
 from app.domains.payment.adapter.outbound.external.amplitude_adapter import (
     AmplitudeAnalyticsAdapter,
 )
 from app.domains.payment.adapter.outbound.external.payapp_client import PayAppClient
+from app.domains.payment.adapter.outbound.external.portone_client import PortOneClient
 from app.domains.payment.adapter.outbound.persistence.coupon_repository import (
     CouponRepository,
 )
@@ -213,6 +220,9 @@ from app.domains.payment.adapter.outbound.user_demographics_adapter import (
     UserDemographicsAdapter,
 )
 from app.domains.payment.adapter.outbound.user_lookup_adapter import UserLookupAdapter
+from app.domains.payment.application.usecase.complete_portone_payment_usecase import (
+    CompletePortOnePaymentUseCase,
+)
 from app.domains.payment.application.usecase.dev_bypass_payment_usecase import (
     DevBypassPaymentUseCase,
 )
@@ -712,6 +722,27 @@ def _make_handle_feedback_usecase(
     )
 
 
+def _make_complete_portone_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> CompletePortOnePaymentUseCase:
+    # 합성은 백그라운드(_compose_report_background, 자기 세션) — 요청 세션엔 analytics/demographics 만.
+    _creator, _resolver, _ul, user_demographics, analytics = _build_paid_report_pipeline(
+        session
+    )
+    return CompletePortOnePaymentUseCase(
+        portone=PortOneClient(
+            api_secret=_settings.portone_api_secret or "",
+            webhook_secret=_settings.portone_webhook_secret,
+        ),
+        repo=PaymentRepository(session),
+        user_lookup=UserLookupAdapter(user_repo=UserRepository(session)),
+        background_composer=_compose_report_background,
+        analytics=analytics,
+        user_demographics=user_demographics,
+        allow_test_channel=_settings.portone_allow_test_channel,
+    )
+
+
 def _make_payment_status_usecase(
     session: AsyncSession = Depends(_get_session),
 ) -> GetPaymentStatusUseCase:
@@ -858,6 +889,7 @@ app.dependency_overrides[get_archive_usecase] = _make_get_archive_usecase
 app.dependency_overrides[get_request_payment_usecase] = _make_request_payment_usecase
 app.dependency_overrides[get_handle_feedback_usecase] = _make_handle_feedback_usecase
 app.dependency_overrides[get_payment_status_usecase] = _make_payment_status_usecase
+app.dependency_overrides[get_complete_portone_usecase] = _make_complete_portone_usecase
 app.dependency_overrides[get_update_email_usecase] = _make_update_email_usecase
 app.dependency_overrides[get_dev_bypass_usecase] = _make_dev_bypass_usecase
 app.dependency_overrides[get_redeem_coupon_usecase] = _make_redeem_coupon_usecase
@@ -875,6 +907,9 @@ app.include_router(user_router)
 app.include_router(auth_router)
 app.include_router(archive_router)
 app.include_router(payment_router)
+# 포트원 카카오페이 — portone_enabled=True 일 때만 등록 (미설정 시 엔드포인트 404, 완전 차단).
+if _settings.portone_enabled:
+    app.include_router(portone_router)
 app.include_router(paid_report_router)
 app.include_router(kkebi_router)
 app.include_router(paid_report_share_router)

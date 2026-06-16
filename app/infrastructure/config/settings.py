@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     test_login_enabled: bool = False
     test_login_username: str | None = None
     test_login_password: str | None = None
+    # 포트원 V2 결제 (HM-BE-85, 카카오페이). portone_enabled=False면 /api/payments/portone/* 미등록.
+    # 심사 기간엔 FE에서 테스트 계정만 노출 → 통과 후 NEXT_PUBLIC_PORTONE_FOR_ALL 로 전체 개방.
+    portone_enabled: bool = False
+    portone_api_secret: str | None = None
+    portone_store_id: str | None = None
+    portone_channel_key: str | None = None
+    portone_webhook_secret: str | None = None
+    # 테스트 채널(channel.type==TEST) 결제 허용 여부. 테스트 결제창 심사 동안 True,
+    # 실연동(LIVE 채널) 전환 후 False로 막아 테스트 결제 위조 차단.
+    portone_allow_test_channel: bool = False
     # Redis 캐시 (HM-BE-67, 깨비 일일사주). cache_enabled=False면 캐시 미사용.
     redis_url: str = "redis://127.0.0.1:6379/0"
     cache_enabled: bool = True
