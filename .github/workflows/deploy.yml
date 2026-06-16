@@ -65,6 +65,9 @@ jobs:
           AWS_SES_SENDER=${{ secrets.AWS_SES_SENDER }}
           AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TEST_LOGIN_ENABLED=${{ secrets.TEST_LOGIN_ENABLED }}
+          TEST_LOGIN_USERNAME=${{ secrets.TEST_LOGIN_USERNAME }}
+          TEST_LOGIN_PASSWORD=${{ secrets.TEST_LOGIN_PASSWORD }}
           EOF
 
       - name: Install dependencies (uv sync)
