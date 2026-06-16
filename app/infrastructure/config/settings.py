@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     kakao_client_secret: str | None = None   # 카카오 로그인용 Client Secret
     google_client_id: str | None = None
     google_client_secret: str | None = None
+    # 카드사 심사용 테스트 로그인 (HM-BE-84). enabled=True 일 때만 /api/auth/test-login 동작 +
+    # provider=test 계정 결제 0원 자동 발급. 심사 종료 후 False+재배포로 완전 차단.
+    test_login_enabled: bool = False
+    test_login_username: str | None = None
+    test_login_password: str | None = None
     # Redis 캐시 (HM-BE-67, 깨비 일일사주). cache_enabled=False면 캐시 미사용.
     redis_url: str = "redis://127.0.0.1:6379/0"
     cache_enabled: bool = True

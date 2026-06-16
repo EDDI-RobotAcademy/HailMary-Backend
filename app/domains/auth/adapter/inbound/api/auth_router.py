@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.domains.auth.application.request.social_login_request import SocialLoginRequest
+from app.domains.auth.application.request.test_login_request import TestLoginRequest
 from app.domains.auth.application.request.update_last_used_request import (
     UpdateLastUsedRequest,
 )
@@ -25,6 +26,11 @@ from app.domains.auth.application.usecase.social_login_usecase import (
     SocialLoginUseCase,
     UnsupportedProviderError,
 )
+from app.domains.auth.application.usecase.test_login_usecase import (
+    TestLoginDisabledError,
+    TestLoginInvalidCredentialsError,
+    TestLoginUseCase,
+)
 from app.domains.auth.application.usecase.update_last_used_usecase import (
     UpdateLastUsedUseCase,
 )
@@ -38,6 +44,10 @@ _BEARER = "Bearer "
 
 # main.py에서 app.dependency_overrides로 교체된다.
 def get_social_login_usecase() -> SocialLoginUseCase:
+    raise NotImplementedError
+
+
+def get_test_login_usecase() -> TestLoginUseCase:
     raise NotImplementedError
 
 
@@ -103,6 +113,24 @@ async def social_login(
     except OAuthExchangeError as e:
         # code 만료/위조/redirect_uri 불일치 등 — 제공자 교환 실패
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e)) from e
+
+
+@router.post("/test-login", response_model=SocialLoginResponse)
+async def test_login(
+    body: TestLoginRequest,
+    usecase: TestLoginUseCase = Depends(get_test_login_usecase),
+) -> SocialLoginResponse:
+    """카드사 심사용 테스트 로그인 (ID/PW). 비활성 시 404(없는 것처럼)."""
+    try:
+        return await usecase.execute(body)
+    except TestLoginDisabledError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except TestLoginInvalidCredentialsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
 
 
 @router.get("/me", response_model=AccountProfileResponse)

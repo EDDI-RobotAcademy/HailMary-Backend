@@ -125,6 +125,7 @@ from app.domains.auth.adapter.inbound.api.auth_router import (
     get_me_usecase,
     get_optional_account_id,
     get_social_login_usecase,
+    get_test_login_usecase,
     get_token_issuer,
     get_update_last_used_usecase,
 )
@@ -150,6 +151,7 @@ from app.domains.auth.application.usecase.get_me_usecase import GetMeUseCase
 from app.domains.auth.application.usecase.social_login_usecase import (
     SocialLoginUseCase,
 )
+from app.domains.auth.application.usecase.test_login_usecase import TestLoginUseCase
 from app.domains.auth.application.usecase.update_last_used_usecase import (
     UpdateLastUsedUseCase,
 )
@@ -365,6 +367,19 @@ def _make_social_login_usecase(
         oauth_clients=_oauth_clients,
         account_repo=AccountRepository(session),
         token_issuer=_get_token_provider(),
+    )
+
+
+def _make_test_login_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> TestLoginUseCase:
+    # 카드사 심사용. test_login_enabled=False면 usecase가 404(없는 것처럼) 반환.
+    return TestLoginUseCase(
+        account_repo=AccountRepository(session),
+        token_issuer=_get_token_provider(),
+        enabled=_settings.test_login_enabled,
+        username=_settings.test_login_username,
+        password=_settings.test_login_password,
     )
 
 
@@ -644,6 +659,23 @@ def _build_paid_report_pipeline(
     return create_paid_report_usecase, saju_hash_resolver, user_lookup, user_demographics, analytics
 
 
+class _TestAccountChecker:
+    """request_payment용 어댑터 — test_login_enabled AND account.provider==TEST 면 테스트 계정.
+
+    플래그 off면 항상 False → 심사 종료 후 0원 발급 경로 완전 차단.
+    """
+
+    def __init__(self, account_repo: AccountRepository, enabled: bool) -> None:
+        self._account_repo = account_repo
+        self._enabled = enabled
+
+    async def is_test_account(self, account_id: int | None) -> bool:
+        if not self._enabled or account_id is None:
+            return False
+        account = await self._account_repo.find_by_id(account_id)
+        return account is not None and account.provider == Provider.TEST
+
+
 def _make_request_payment_usecase(
     session: AsyncSession = Depends(_get_session),
 ) -> RequestPaymentUseCase:
@@ -652,6 +684,10 @@ def _make_request_payment_usecase(
         gateway=_make_payapp_client(),
         repo=PaymentRepository(session),
         user_lookup=UserLookupAdapter(user_repo=user_repo),
+        account_checker=_TestAccountChecker(
+            AccountRepository(session), _settings.test_login_enabled
+        ),
+        background_composer=_compose_report_background,
     )
 
 
@@ -829,6 +865,7 @@ app.dependency_overrides[get_validate_coupon_usecase] = _make_validate_coupon_us
 app.dependency_overrides[get_frontend_base_url] = lambda: _settings.frontend_base_url
 app.dependency_overrides[get_paid_report_usecase] = _make_get_paid_report_usecase
 app.dependency_overrides[get_social_login_usecase] = _make_social_login_usecase
+app.dependency_overrides[get_test_login_usecase] = _make_test_login_usecase
 app.dependency_overrides[get_me_usecase] = _make_get_me_usecase
 app.dependency_overrides[get_update_last_used_usecase] = _make_update_last_used_usecase
 app.dependency_overrides[get_delete_account_usecase] = _make_delete_account_usecase

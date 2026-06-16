@@ -46,6 +46,17 @@ class UserLookupPort(Protocol):
     async def find_user_id_by_session_token(self, token: str) -> int | None: ...
 
 
+class TestAccountCheckerPort(Protocol):
+    """account_id가 카드사 심사용 테스트 계정(provider=test)인지 판정.
+
+    True면 request_payment가 PayApp을 건너뛰고 0원 무료 발급한다.
+    test_login_enabled=False면 항상 False (어댑터에서 게이트). payment 도메인이
+    auth repo를 직접 import하지 않도록 포트로 추상화 — main.py가 어댑터 주입.
+    """
+
+    async def is_test_account(self, account_id: int | None) -> bool: ...
+
+
 class UserDemographicsPort(Protocol):
     """user_id로 분석용 인구통계(gender / birth_year)를 조회하는 hook.
 

@@ -7,15 +7,21 @@ FE → BE → PayApp payrequest → mul_no/payurl 받음 → DB에 payment(statu
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
+from typing import Any
 
-from app.domains.payment.application.payment_ports import UserLookupPort
+from app.domains.payment.application.payment_ports import (
+    TestAccountCheckerPort,
+    UserLookupPort,
+)
 from app.domains.payment.application.request.request_payment_request import (
     RequestPaymentRequest,
 )
 from app.domains.payment.application.response.request_payment_response import (
     RequestPaymentResponse,
 )
+from app.domains.payment.application.usecase._grant_paid_report import grant_paid_report
 from app.domains.payment.domain.entity.payment import Payment
 from app.domains.payment.domain.port.payapp_payment_port import PayAppPaymentPort
 from app.domains.payment.domain.port.payment_repository_port import (
@@ -38,10 +44,14 @@ class RequestPaymentUseCase:
         gateway: PayAppPaymentPort,
         repo: PaymentRepositoryPort,
         user_lookup: UserLookupPort,
+        account_checker: TestAccountCheckerPort | None = None,
+        background_composer: Callable[..., Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         self._gateway = gateway
         self._repo = repo
         self._user_lookup = user_lookup
+        self._account_checker = account_checker
+        self._background_composer = background_composer
 
     async def execute(
         self, request: RequestPaymentRequest, account_id: int | None = None
@@ -60,6 +70,35 @@ class RequestPaymentUseCase:
 
         # 3. orderId 발급 (uuid4)
         order_id = f"order_{uuid.uuid4().hex}"
+
+        # 3.5 카드사 심사용 테스트 계정이면 PayApp 건너뛰고 0원 무료 발급 (쿠폰과 동일 인프라).
+        # account_checker는 test_login_enabled=False면 항상 False → 일반 사용자엔 영향 0.
+        if (
+            self._account_checker is not None
+            and await self._account_checker.is_test_account(account_id)
+        ):
+            saved = await grant_paid_report(
+                repo=self._repo,
+                user_id=user_id,
+                character=request.character,
+                customer_email=request.customer_email,
+                amount=0,
+                order_id=order_id,
+                payment_key=f"test-{order_id}",
+                paid_report_creator=None,
+                saju_hash_resolver=None,
+                analytics=None,  # 테스트 결제는 Amplitude 미발화(분석 오염 방지)
+                user_demographics=None,
+                log_tag="TEST",
+                method="test_free",
+                background_composer=self._background_composer,
+                account_id=account_id,
+                device_id=request.device_id,
+                session_id=request.session_id,
+            )
+            return RequestPaymentResponse(
+                order_id=saved.order_id, payurl="", free_granted=True
+            )
 
         # 4. PayApp payrequest
         result = await self._gateway.request_payment(
