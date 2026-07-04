@@ -158,6 +158,16 @@ from app.domains.auth.application.usecase.update_last_used_usecase import (
 from app.domains.auth.domain.port.oauth_client_port import OAuthClientPort
 from app.domains.auth.domain.port.token_port import TokenDecodeError
 from app.domains.auth.domain.value_object.provider import Provider
+from app.domains.chat.adapter.inbound.api.chat_router import (
+    get_stream_chat_usecase,
+)
+from app.domains.chat.adapter.inbound.api.chat_router import (
+    router as chat_router,
+)
+from app.domains.chat.adapter.outbound.external.claude_chat_client import (
+    ClaudeChatClient,
+)
+from app.domains.chat.application.usecase.stream_chat_usecase import StreamChatUseCase
 from app.domains.kkebi.adapter.inbound.api.kkebi_router import (
     get_daily_fortune_usecase,
     get_saved_daily_result_usecase,
@@ -876,6 +886,28 @@ def _make_get_paid_report_usecase(
     )
 
 
+# ── Chat Domain UseCase 팩토리 (도화선 2.0, HM-BE-86·87) ─────────────────────
+
+# 스트리밍 클라이언트는 모듈 싱글턴 — 요청마다 AsyncAnthropic 재생성 방지.
+_chat_client_instance: ClaudeChatClient | None = (
+    ClaudeChatClient(api_key=_settings.claude_api_key, model=_settings.claude_model)
+    if _settings.chat_enabled and _settings.claude_api_key
+    else None
+)
+
+
+def _make_stream_chat_usecase() -> StreamChatUseCase:
+    # chat_enabled=True + claude_api_key 설정 시에만 라우터가 등록되므로 여기 도달 시 존재 보장.
+    if _chat_client_instance is None:
+        raise HTTPException(status_code=503, detail="chat 미설정 (chat_enabled/claude_api_key)")
+    return StreamChatUseCase(
+        chat_client=_chat_client_instance,
+        max_tokens=_settings.chat_max_tokens,
+        history_window=_settings.chat_history_window,
+        temperature=_settings.chat_temperature,
+    )
+
+
 # ── 의존성 오버라이드 ──────────────────────────────────────────────────────────
 
 app.dependency_overrides[get_user_repository] = _make_user_repository
@@ -902,6 +934,7 @@ app.dependency_overrides[get_me_usecase] = _make_get_me_usecase
 app.dependency_overrides[get_update_last_used_usecase] = _make_update_last_used_usecase
 app.dependency_overrides[get_delete_account_usecase] = _make_delete_account_usecase
 app.dependency_overrides[get_token_issuer] = _get_token_provider
+app.dependency_overrides[get_stream_chat_usecase] = _make_stream_chat_usecase
 
 app.include_router(user_router)
 app.include_router(auth_router)
@@ -912,6 +945,10 @@ if _settings.portone_enabled:
     app.include_router(portone_router)
 app.include_router(paid_report_router)
 app.include_router(kkebi_router)
+# 도화선 2.0 캐릭터 챗 — chat_enabled=True 일 때만 등록 (미설정 시 404, 완전 차단).
+# staging은 main push 자동 배포라 이 게이트가 미완성 노출 방어선 (CHAT_SSOT.md).
+if _settings.chat_enabled:
+    app.include_router(chat_router)
 app.include_router(paid_report_share_router)
 # 무료 쿠폰 — dev bypass 와 달리 환경 가드 없이 항상 등록(prod 포함).
 # 유효 쿠폰 코드 자체가 가드 역할 → _DEV_BYPASS_ENVS 분기에 넣지 말 것.

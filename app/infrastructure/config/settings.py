@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     kkebi_pillars_ttl_seconds: int = 60 * 60 * 24 * 30  # 30일 (일주는 평생 불변, 안전상 만료)
     kkebi_result_ttl_seconds: int = 60 * 60 * 25         # 25시간 (KST 자정 + 1h 여유)
+    # 도화선 2.0 캐릭터 챗 (HM-BE-86·87, SSOT=도화선_2.0/CHAT_SSOT.md).
+    # chat_enabled=False면 /api/chat/* 라우터 자체 미등록 — staging 자동 배포에도 무해.
+    chat_enabled: bool = False
+    chat_max_tokens: int = 800          # 채팅 말풍선 분량 상한 (절단은 usecase 로깅)
+    chat_history_window: int = 20       # 최근 N턴만 컨텍스트로 (Phase 2부터 서버 이력 권위)
+    chat_temperature: float = 0.85
 
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore"
