@@ -68,6 +68,7 @@ jobs:
           QA_ACCESS_TOKEN=${{ secrets.QA_ACCESS_TOKEN }}
           REDIS_URL=${{ secrets.STAGING_REDIS_URL }}
           CACHE_ENABLED=true
+          CHAT_ENABLED=true
           TEST_LOGIN_ENABLED=${{ secrets.TEST_LOGIN_ENABLED }}
           TEST_LOGIN_USERNAME=${{ secrets.TEST_LOGIN_USERNAME }}
           TEST_LOGIN_PASSWORD=${{ secrets.TEST_LOGIN_PASSWORD }}
