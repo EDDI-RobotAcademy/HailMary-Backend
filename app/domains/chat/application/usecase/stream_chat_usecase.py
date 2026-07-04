@@ -3,7 +3,6 @@ import uuid
 from collections.abc import AsyncIterator
 
 from app.domains.chat.application.request.send_chat_message_request import (
-    ChatHistoryItem,
     SendChatMessageRequest,
 )
 from app.domains.chat.application.response.chat_stream_event import ChatStreamEvent
@@ -14,22 +13,22 @@ from app.domains.chat.domain.value_object.chat_turn import ChatTurn
 logger = logging.getLogger(__name__)
 
 
-def _normalize_turns(history: list[ChatHistoryItem], user_message: str) -> list[ChatTurn]:
-    """프로토타입 이력(user|character) → Anthropic 턴(user|assistant) 정규화.
+def _normalize_turns(history: list[tuple[str, str]], user_message: str) -> list[ChatTurn]:
+    """이력 (role, content) 쌍 → Anthropic 턴(user|assistant) 정규화. 공용 (P1 무상태·P2 방 기준).
 
     - character → assistant 매핑
     - 선두 assistant 턴 제거 (Anthropic은 user 시작 요구 — greet 시드가 선두에 옴)
     - 연속 동일 role은 병합 (교대 규칙 위반 방지)
     """
     turns: list[ChatTurn] = []
-    for item in history:
-        role = "assistant" if item.role == "character" else "user"
+    for role_raw, content in history:
+        role = "assistant" if role_raw == "character" else "user"
         if not turns and role == "assistant":
             continue
         if turns and turns[-1].role == role:
-            turns[-1] = ChatTurn(role=role, content=f"{turns[-1].content}\n{item.content}")
+            turns[-1] = ChatTurn(role=role, content=f"{turns[-1].content}\n{content}")
         else:
-            turns.append(ChatTurn(role=role, content=item.content))
+            turns.append(ChatTurn(role=role, content=content))
     if turns and turns[-1].role == "user":
         turns[-1] = ChatTurn(role="user", content=f"{turns[-1].content}\n{user_message}")
     else:
@@ -63,7 +62,7 @@ class StreamChatUseCase:
         message_id = uuid.uuid4().hex
         system_prompt = build_system_prompt(request.character_id, request.mode)
         recent = request.history[-self._history_window :]
-        turns = _normalize_turns(recent, request.content)
+        turns = _normalize_turns([(m.role, m.content) for m in recent], request.content)
 
         yield ChatStreamEvent(
             event="start",

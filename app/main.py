@@ -159,7 +159,11 @@ from app.domains.auth.domain.port.oauth_client_port import OAuthClientPort
 from app.domains.auth.domain.port.token_port import TokenDecodeError
 from app.domains.auth.domain.value_object.provider import Provider
 from app.domains.chat.adapter.inbound.api.chat_router import (
+    get_list_chat_messages_usecase,
+    get_list_chat_rooms_usecase,
+    get_open_chat_room_usecase,
     get_stream_chat_usecase,
+    get_stream_room_chat_usecase,
 )
 from app.domains.chat.adapter.inbound.api.chat_router import (
     router as chat_router,
@@ -167,7 +171,19 @@ from app.domains.chat.adapter.inbound.api.chat_router import (
 from app.domains.chat.adapter.outbound.external.claude_chat_client import (
     ClaudeChatClient,
 )
+from app.domains.chat.adapter.outbound.persistence.chat_turn_store import ChatTurnStore
+from app.domains.chat.adapter.outbound.persistence.conversation_repository import (
+    ConversationRepository,
+)
+from app.domains.chat.application.usecase.room_usecases import (
+    ListChatMessagesUseCase,
+    ListChatRoomsUseCase,
+    OpenChatRoomUseCase,
+)
 from app.domains.chat.application.usecase.stream_chat_usecase import StreamChatUseCase
+from app.domains.chat.application.usecase.stream_room_chat_usecase import (
+    StreamRoomChatUseCase,
+)
 from app.domains.kkebi.adapter.inbound.api.kkebi_router import (
     get_daily_fortune_usecase,
     get_saved_daily_result_usecase,
@@ -908,6 +924,40 @@ def _make_stream_chat_usecase() -> StreamChatUseCase:
     )
 
 
+# 스트리밍 턴 영속화 — 요청 세션이 아닌 자체 단명 세션 (CHAT_SSOT.md SSE 계약).
+_chat_turn_store = ChatTurnStore(AsyncSessionLocal)
+
+
+def _make_stream_room_chat_usecase() -> StreamRoomChatUseCase:
+    if _chat_client_instance is None:
+        raise HTTPException(status_code=503, detail="chat 미설정 (chat_enabled/claude_api_key)")
+    return StreamRoomChatUseCase(
+        chat_client=_chat_client_instance,
+        turn_store=_chat_turn_store,
+        max_tokens=_settings.chat_max_tokens,
+        history_window=_settings.chat_history_window,
+        temperature=_settings.chat_temperature,
+    )
+
+
+def _make_list_chat_rooms_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> ListChatRoomsUseCase:
+    return ListChatRoomsUseCase(conversation_repo=ConversationRepository(session))
+
+
+def _make_open_chat_room_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> OpenChatRoomUseCase:
+    return OpenChatRoomUseCase(conversation_repo=ConversationRepository(session))
+
+
+def _make_list_chat_messages_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> ListChatMessagesUseCase:
+    return ListChatMessagesUseCase(conversation_repo=ConversationRepository(session))
+
+
 # ── 의존성 오버라이드 ──────────────────────────────────────────────────────────
 
 app.dependency_overrides[get_user_repository] = _make_user_repository
@@ -935,6 +985,10 @@ app.dependency_overrides[get_update_last_used_usecase] = _make_update_last_used_
 app.dependency_overrides[get_delete_account_usecase] = _make_delete_account_usecase
 app.dependency_overrides[get_token_issuer] = _get_token_provider
 app.dependency_overrides[get_stream_chat_usecase] = _make_stream_chat_usecase
+app.dependency_overrides[get_stream_room_chat_usecase] = _make_stream_room_chat_usecase
+app.dependency_overrides[get_list_chat_rooms_usecase] = _make_list_chat_rooms_usecase
+app.dependency_overrides[get_open_chat_room_usecase] = _make_open_chat_room_usecase
+app.dependency_overrides[get_list_chat_messages_usecase] = _make_list_chat_messages_usecase
 
 app.include_router(user_router)
 app.include_router(auth_router)

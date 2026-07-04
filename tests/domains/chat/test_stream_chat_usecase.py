@@ -6,7 +6,6 @@
 from collections.abc import AsyncIterator
 
 from app.domains.chat.application.request.send_chat_message_request import (
-    ChatHistoryItem,
     SendChatMessageRequest,
 )
 from app.domains.chat.application.response.chat_stream_event import ChatStreamEvent
@@ -95,10 +94,10 @@ async def test_system_prompt_contains_persona_and_language_separation() -> None:
 
 def test_normalize_drops_leading_character_greeting_and_merges() -> None:
     history = [
-        ChatHistoryItem(role="character", content="왔어."),  # greet 시드 — 선두 제거
-        ChatHistoryItem(role="user", content="안녕"),
-        ChatHistoryItem(role="user", content="잘 지냈어?"),  # 연속 user 병합
-        ChatHistoryItem(role="character", content="그럭저럭."),
+        ("character", "왔어."),  # greet 시드 — 선두 제거
+        ("user", "안녕"),
+        ("user", "잘 지냈어?"),  # 연속 user 병합
+        ("character", "그럭저럭."),
     ]
     turns = _normalize_turns(history, "본론 말할게.")
     assert [t.role for t in turns] == ["user", "assistant", "user"]
@@ -107,8 +106,7 @@ def test_normalize_drops_leading_character_greeting_and_merges() -> None:
 
 
 def test_normalize_merges_user_message_into_trailing_user_turn() -> None:
-    history = [ChatHistoryItem(role="user", content="있잖아")]
-    turns = _normalize_turns(history, "고민 있어.")
+    turns = _normalize_turns([("user", "있잖아")], "고민 있어.")
     assert len(turns) == 1
     assert turns[0] == ChatTurn(role="user", content="있잖아\n고민 있어.")
 
