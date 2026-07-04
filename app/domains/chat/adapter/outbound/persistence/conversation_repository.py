@@ -85,6 +85,9 @@ class ConversationRepository(ConversationRepositoryPort):
             )
         )
         await self._session.flush()
+        # ⚠️ server_default 컬럼(created_at) 가드: INSERT 직후 refresh 없이 attribute를 읽으면
+        # MySQL(asyncmy)에서 lazy refresh IO → MissingGreenlet 500. (팀 기지 함정 — SQLite는 안 터짐)
+        await self._session.refresh(orm)
         return ConversationMapper.to_entity(orm), True
 
     async def get_owned(self, *, conversation_id: int, account_id: int) -> Conversation:
