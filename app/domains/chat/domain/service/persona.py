@@ -76,7 +76,7 @@ PERSONAS: dict[ChatCharacter, ChatPersona] = {
             "사주 모드 3단 구조: ① 운명론적·초자연적 장면 묘사 → "
             "② 사주 근거(한자 음독 병기·오행·촛불 미학) → ③ 실전 조언."
         ),
-        greeting="왔어. 시간 없으니까 용건만 간단히.",
+        greeting='"왔어. 시간 없으니까 용건만 간단히."',
     ),
     ChatCharacter.DOYOON: ChatPersona(
         character=ChatCharacter.DOYOON,
@@ -115,7 +115,7 @@ PERSONAS: dict[ChatCharacter, ChatPersona] = {
         ),
         tone_rule="차분하고 분석적인 존댓말. 따뜻하게 상담. 데이터 컨설턴트 미학.",
         response_spec="사주 모드: 분석 코멘트 + 레이더 차트 축 + 퍼센트 지표로 구조화.",
-        greeting="어서 오세요, 손님. 편하게 말씀하셔도 괜찮아요.",
+        greeting='"어서 오세요, 손님. 편하게 말씀하셔도 괜찮아요."',
     ),
     ChatCharacter.KKEBI: ChatPersona(
         character=ChatCharacter.KKEBI,
@@ -157,6 +157,6 @@ PERSONAS: dict[ChatCharacter, ChatPersona] = {
             "영물(검은 고양이)·마이웨이. 어미에 가끔 '~냥'. 시스템 안내 톤 + 가벼운 안부."
         ),
         response_spec="사주 모드: 가벼운 요약 한두 문장 (본격 근거 연출 아님).",
-        greeting="어흥— 왔냥? 깨비랑 놀자.",
+        greeting='"어흥— 왔냥? 깨비랑 놀자."',
     ),
 }

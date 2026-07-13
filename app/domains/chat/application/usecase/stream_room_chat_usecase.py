@@ -6,7 +6,10 @@ from app.domains.chat.application.response.chat_stream_event import ChatStreamEv
 from app.domains.chat.application.usecase.stream_chat_usecase import _normalize_turns
 from app.domains.chat.domain.port.chat_client_port import ChatClientError, ChatClientPort
 from app.domains.chat.domain.port.chat_turn_store_port import ChatTurnStorePort, TurnBegin
-from app.domains.chat.domain.service.prompt_builder import build_system_prompt
+from app.domains.chat.domain.service.prompt_builder import (
+    build_system_prompt,
+    strip_info_tail,
+)
 from app.domains.chat.domain.service.saju_block_schema import (
     TOOL_NAME,
     lead_text,
@@ -101,8 +104,9 @@ class StreamRoomChatUseCase:
             )
             return
 
+        # 캐주얼 응답 끝 INFO tail은 상태창 전용 → 저장 본문에서 제외
         message_id = await self._turn_store.complete_turn(
-            conversation_id=room_id, content=acc.strip(), mode=request.mode
+            conversation_id=room_id, content=strip_info_tail(acc).strip(), mode=request.mode
         )
         yield ChatStreamEvent(
             event="done", data={"stop_reason": "end_turn", "message_id": message_id}

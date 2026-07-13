@@ -241,6 +241,23 @@ async def test_begin_raises_for_missing_room() -> None:
         )
 
 
+async def test_casual_strips_info_tail_from_persisted_content() -> None:
+    # 캐주얼 응답 끝 INFO tail(<<<INFO>>> 이후)은 상태창 전용 → 저장 본문에서 제외 (HM-BE-97)
+    store = FakeTurnStore(character=ChatCharacter.YEONU, history=[])
+    client = FakeChatClient(["딱 보면 알아. ", '\n\n<<<INFO>>>\n{"place":"촛불 밝힌 상담실"}'])
+    usecase = _stream_usecase(client, store)
+    req = SendRoomMessageRequest(mode=ChatMode.CASUAL, content="안녕.")
+
+    begin = await usecase.begin(room_id=5, account_id=1, request=req)
+    events = [ev async for ev in usecase.stream(room_id=5, begin=begin, request=req)]
+
+    # delta는 tail 포함해 그대로 흘러가고(FE가 분리), 저장 content만 tail 제외
+    assert [e.event for e in events] == ["start", "delta", "delta", "done"]
+    saved = store.completed[0]["content"]
+    assert "<<<INFO>>>" not in saved
+    assert saved == "딱 보면 알아."
+
+
 async def test_saju_mode_with_profile_emits_structured_block() -> None:
     block = {
         "kind": "yeonu",

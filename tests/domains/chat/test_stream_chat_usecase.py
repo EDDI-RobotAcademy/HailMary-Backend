@@ -123,7 +123,10 @@ def test_prompt_builder_mode_switch() -> None:
     assert "유저) 대행 금지" in casual  # 최우선 규칙
     assert "💭" not in casual and "💭" not in saju  # 속마음 제거됨 (HM-BE-96)
     assert "최대 1000자" in saju and "최소 300자" in saju  # 사주 모드 분량 규격
-    assert "2~4문장" in casual  # 사적 모드 분량
+    # 스크립트 블록 포맷 (HM-BE-97)
+    assert "스크립트 블록" in casual and "빈 줄" in casual
+    # INFO tail은 캐주얼 전용, 사주 모드엔 없음
+    assert "<<<INFO>>>" in casual and "<<<INFO>>>" not in saju
 
 
 async def test_history_window_trims_old_turns() -> None:
