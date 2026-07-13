@@ -8,6 +8,7 @@ from app.domains.chat.application.request.send_chat_message_request import (
 from app.domains.chat.application.response.chat_stream_event import ChatStreamEvent
 from app.domains.chat.domain.port.chat_client_port import ChatClientError, ChatClientPort
 from app.domains.chat.domain.service.prompt_builder import build_system_prompt
+from app.domains.chat.domain.service.stream_splitter import split_inner_thought
 from app.domains.chat.domain.value_object.chat_turn import ChatTurn
 
 logger = logging.getLogger(__name__)
@@ -69,15 +70,21 @@ class StreamChatUseCase:
             data={"message_id": message_id, "character_id": request.character_id.value},
         )
         streamed = False
+        inner_thought: str | None = None
         try:
-            async for delta in self._chat_client.stream_chat(
+            stream = self._chat_client.stream_chat(
                 system_prompt=system_prompt,
                 turns=turns,
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
-            ):
-                streamed = True
-                yield ChatStreamEvent(event="delta", data={"text": delta})
+            )
+            # 발화(delta)와 속마음(💭:)을 분리 — CHAT_SSOT P3-pre 속마음 파이프라인
+            async for kind, text in split_inner_thought(stream):
+                if kind == "delta":
+                    streamed = True
+                    yield ChatStreamEvent(event="delta", data={"text": text})
+                else:
+                    inner_thought = text
         except ChatClientError as exc:
             logger.warning("chat 스트림 실패 (streamed=%s): %s", streamed, exc)
             yield ChatStreamEvent(
@@ -85,4 +92,6 @@ class StreamChatUseCase:
                 data={"code": "UPSTREAM_ERROR", "message": "응답 생성에 실패했어요. 다시 시도해 주세요."},
             )
             return
+        if inner_thought:
+            yield ChatStreamEvent(event="inner_thought", data={"text": inner_thought})
         yield ChatStreamEvent(event="done", data={"stop_reason": "end_turn"})

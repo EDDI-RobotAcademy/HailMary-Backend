@@ -7,6 +7,7 @@ from app.domains.chat.application.usecase.stream_chat_usecase import _normalize_
 from app.domains.chat.domain.port.chat_client_port import ChatClientError, ChatClientPort
 from app.domains.chat.domain.port.chat_turn_store_port import ChatTurnStorePort, TurnBegin
 from app.domains.chat.domain.service.prompt_builder import build_system_prompt
+from app.domains.chat.domain.service.stream_splitter import split_inner_thought
 
 logger = logging.getLogger(__name__)
 
@@ -64,15 +65,21 @@ class StreamRoomChatUseCase:
             },
         )
         acc = ""
+        inner_thought: str | None = None
         try:
-            async for delta in self._chat_client.stream_chat(
+            stream = self._chat_client.stream_chat(
                 system_prompt=system_prompt,
                 turns=turns,
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
-            ):
-                acc += delta
-                yield ChatStreamEvent(event="delta", data={"text": delta})
+            )
+            # 발화(delta)와 속마음(💭:) 분리. 속마음은 emit-only — 영속화는 mig 014에서 (CHAT_SSOT P3-pre)
+            async for kind, text in split_inner_thought(stream):
+                if kind == "delta":
+                    acc += text
+                    yield ChatStreamEvent(event="delta", data={"text": text})
+                else:
+                    inner_thought = text
         except ChatClientError as exc:
             logger.warning("room chat 스트림 실패 (room=%d, acc=%d자): %s", room_id, len(acc), exc)
             yield ChatStreamEvent(
@@ -81,8 +88,10 @@ class StreamRoomChatUseCase:
             )
             return
 
+        if inner_thought:
+            yield ChatStreamEvent(event="inner_thought", data={"text": inner_thought})
         message_id = await self._turn_store.complete_turn(
-            conversation_id=room_id, content=acc, mode=request.mode
+            conversation_id=room_id, content=acc.strip(), mode=request.mode
         )
         yield ChatStreamEvent(
             event="done", data={"stop_reason": "end_turn", "message_id": message_id}

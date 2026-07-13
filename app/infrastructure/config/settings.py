@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     # 도화선 2.0 캐릭터 챗 (HM-BE-86·87, SSOT=도화선_2.0/CHAT_SSOT.md).
     # chat_enabled=False면 /api/chat/* 라우터 자체 미등록 — staging 자동 배포에도 무해.
     chat_enabled: bool = False
-    chat_max_tokens: int = 800          # 채팅 말풍선 분량 상한 (절단은 usecase 로깅)
+    chat_max_tokens: int = 1024         # 사주 모드 1000자(≈600~700토큰)+속마음 여유 (HM-BE-94)
     chat_history_window: int = 20       # 최근 N턴만 컨텍스트로 (Phase 2부터 서버 이력 권위)
     chat_temperature: float = 0.85
 

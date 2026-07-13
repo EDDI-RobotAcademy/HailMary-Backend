@@ -114,10 +114,16 @@ def test_normalize_merges_user_message_into_trailing_user_turn() -> None:
 def test_prompt_builder_mode_switch() -> None:
     casual = build_system_prompt(ChatCharacter.YEONU, ChatMode.CASUAL)
     saju = build_system_prompt(ChatCharacter.YEONU, ChatMode.SAJU)
-    assert "사적 대화" in casual and "사주 상담" not in casual
-    assert "사주 상담" in saju and "사적 대화" not in saju
+    # 모드 블록 헤더 기준 (페르소나 본문의 "사주 상담가" 같은 표현과 무관하게)
+    assert "[현재 모드: 사적 대화]" in casual and "[현재 모드: 사주 상담]" not in casual
+    assert "[현재 모드: 사주 상담]" in saju and "[현재 모드: 사적 대화]" not in saju
     assert "강연우" in casual
     assert "음독" in casual  # 한자 음독 병기 공통 규칙
+    # HM-BE-94 신규 블록 존재 검증
+    assert "유저) 대행 금지" in casual  # 최우선 규칙
+    assert "💭:" in casual  # 속마음 마커 지시
+    assert "최대 1000자" in saju and "최소 300자" in saju  # 사주 모드 분량 규격
+    assert "2~4문장" in casual  # 사적 모드 분량
 
 
 async def test_history_window_trims_old_turns() -> None:
