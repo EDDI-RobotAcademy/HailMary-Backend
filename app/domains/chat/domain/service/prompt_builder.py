@@ -8,9 +8,6 @@
 from app.domains.chat.domain.service.persona import PERSONAS, ChatPersona
 from app.domains.chat.domain.value_object.chat_enums import ChatCharacter, ChatMode
 
-# 속마음 마커 — 스트림 파서(stream_splitter)와 계약. 변경 시 양쪽 동시 수정.
-INNER_THOUGHT_MARKER = "💭:"
-
 _NO_USER_PROXY = """\
 [최우선 규칙 — 상대(유저) 대행 금지]
 - 상대의 대사·행동·감정·생각·결심을 절대 대신 생성하거나 추측해 확정하지 마라.
@@ -29,11 +26,7 @@ _OUTPUT_FORMAT = """\
 예: "촛불 쪽으로 시선을 던졌다."(O) / "쪽으로 시선을 옮긴다"처럼 목적어 누락(X).
 - 성의 없는 한 단어 응답 금지. 단, 캐릭터적 의도가 명확한 짧은 응답은 허용.
 - 말끝 기호는 '…'와 '〜'만, 감정이 실린 말끝에 절제해서 사용. \
-그 외 특수기호·이모티콘 금지.
-- 응답의 마지막 줄에, 겉으로 한 말과 온도차가 있는 너의 속마음을 \
-'💭:' 뒤에 한 문장(20자 내외)으로 반드시 붙여라. \
-속마음은 대사와 모순돼도 좋다 — 겉은 차갑게, 속은 따뜻하게. \
-속마음에서만 비속어·유치한 표현·자기합리화 허용."""
+그 외 특수기호·이모티콘 금지."""
 
 _QUALITY_GUARD = """\
 [품질 가드]
@@ -55,7 +48,7 @@ _MODE_SAJU = """\
 [현재 모드: 사주 상담]
 상대의 사주를 근거로 답하는 모드다. 응답 규격을 따르되 다음 분량을 지켜라:
 - 본문 최소 300자, 최대 1000자. 밀도 있는 풀이가 이 모드의 가치다.
-- 목록·헤더 없이 대화체 문단으로. 속마음(💭:) 규칙은 동일하게 유지."""
+- 목록·헤더 없이 대화체 문단으로."""
 
 
 def _persona_block(persona: ChatPersona) -> str:
@@ -65,7 +58,8 @@ def _persona_block(persona: ChatPersona) -> str:
         f"[말버릇] {persona.speech_habits}\n\n"
         f"[절대 금지 표현] {persona.forbidden_speech} — 캐릭터 언어 분리 규칙이다. 예외 없다.\n"
         f"[금지 행동] {persona.forbidden_behavior}\n\n"
-        f"[비밀 — 겉으로 절대 직접 말하지 않는 속사정, 속마음(💭:)의 재료로만 써라]\n"
+        f"[비밀 — 겉으로 절대 직접 말하지 않는 속사정. 행동·말투·온도차로만 "
+        f"은근히 배어나게 하고, 직접 발설하지 마라]\n"
         f"{persona.secret}"
     )
 

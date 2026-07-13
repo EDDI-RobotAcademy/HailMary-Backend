@@ -13,7 +13,6 @@ from app.domains.chat.domain.service.saju_block_schema import (
     saju_tool,
 )
 from app.domains.chat.domain.service.saju_summary import build_saju_context_block
-from app.domains.chat.domain.service.stream_splitter import split_inner_thought
 from app.domains.chat.domain.value_object.chat_enums import ChatMode
 from app.domains.chat.domain.value_object.chat_turn import ChatTurn
 
@@ -85,21 +84,15 @@ class StreamRoomChatUseCase:
             return
 
         acc = ""
-        inner_thought: str | None = None
         try:
-            stream = self._chat_client.stream_chat(
+            async for text in self._chat_client.stream_chat(
                 system_prompt=system_prompt,
                 turns=turns,
                 max_tokens=self._max_tokens,
                 temperature=self._temperature,
-            )
-            # 발화(delta)와 속마음(💭:) 분리. 속마음은 emit-only — 영속화는 mig 014에서 (CHAT_SSOT P3-pre)
-            async for kind, text in split_inner_thought(stream):
-                if kind == "delta":
-                    acc += text
-                    yield ChatStreamEvent(event="delta", data={"text": text})
-                else:
-                    inner_thought = text
+            ):
+                acc += text
+                yield ChatStreamEvent(event="delta", data={"text": text})
         except ChatClientError as exc:
             logger.warning("room chat 스트림 실패 (room=%d, acc=%d자): %s", room_id, len(acc), exc)
             yield ChatStreamEvent(
@@ -108,8 +101,6 @@ class StreamRoomChatUseCase:
             )
             return
 
-        if inner_thought:
-            yield ChatStreamEvent(event="inner_thought", data={"text": inner_thought})
         message_id = await self._turn_store.complete_turn(
             conversation_id=room_id, content=acc.strip(), mode=request.mode
         )

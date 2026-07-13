@@ -121,7 +121,7 @@ def test_prompt_builder_mode_switch() -> None:
     assert "음독" in casual  # 한자 음독 병기 공통 규칙
     # HM-BE-94 신규 블록 존재 검증
     assert "유저) 대행 금지" in casual  # 최우선 규칙
-    assert "💭:" in casual  # 속마음 마커 지시
+    assert "💭" not in casual and "💭" not in saju  # 속마음 제거됨 (HM-BE-96)
     assert "최대 1000자" in saju and "최소 300자" in saju  # 사주 모드 분량 규격
     assert "2~4문장" in casual  # 사적 모드 분량
 
