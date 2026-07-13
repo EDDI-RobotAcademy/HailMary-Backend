@@ -15,6 +15,7 @@ from app.domains.chat.domain.value_object.chat_enums import ChatCharacter, ChatM
 from app.domains.chat.infrastructure.mapper.chat_mapper import ChatMessageMapper
 from app.domains.chat.infrastructure.orm.chat_message_orm import ChatMessageORM
 from app.domains.chat.infrastructure.orm.conversation_orm import ConversationORM
+from app.domains.chat.infrastructure.orm.saju_profile_orm import SajuProfileORM
 
 
 class ChatTurnStore:
@@ -74,10 +75,21 @@ class ChatTurnStore:
             session.add(user_orm)
             conv.last_message_at = datetime.now()
             await session.flush()
+
+            # 계정 사주 프로필(있으면) 동승 — 프롬프트 컨텍스트 주입용 (H2/H3)
+            saju_raw = (
+                await session.execute(
+                    select(SajuProfileORM.saju_raw).where(
+                        SajuProfileORM.account_id == account_id
+                    )
+                )
+            ).scalar_one_or_none()
+
             return TurnBegin(
                 character=ChatCharacter(conv.character_id),
                 user_message_id=user_orm.id,
                 history=history,
+                saju_raw=saju_raw,
             )
 
     async def complete_turn(

@@ -12,6 +12,9 @@ from app.domains.chat.application.request.room_requests import (
     OpenRoomRequest,
     SendRoomMessageRequest,
 )
+from app.domains.chat.application.request.saju_profile_request import (
+    SaveSajuProfileRequest,
+)
 from app.domains.chat.application.request.send_chat_message_request import (
     SendChatMessageRequest,
 )
@@ -20,10 +23,17 @@ from app.domains.chat.application.response.room_responses import (
     MessagesPageResponse,
     OpenRoomResponse,
 )
+from app.domains.chat.application.response.saju_profile_response import (
+    SajuProfileResponse,
+)
 from app.domains.chat.application.usecase.room_usecases import (
     ListChatMessagesUseCase,
     ListChatRoomsUseCase,
     OpenChatRoomUseCase,
+)
+from app.domains.chat.application.usecase.saju_profile_usecase import (
+    GetSajuProfileUseCase,
+    SaveSajuProfileUseCase,
 )
 from app.domains.chat.application.usecase.stream_chat_usecase import StreamChatUseCase
 from app.domains.chat.application.usecase.stream_room_chat_usecase import (
@@ -62,6 +72,33 @@ def get_list_chat_messages_usecase() -> ListChatMessagesUseCase:
 
 def get_stream_room_chat_usecase() -> StreamRoomChatUseCase:
     raise NotImplementedError
+
+
+def get_saju_profile_usecase() -> GetSajuProfileUseCase:
+    raise NotImplementedError
+
+
+def get_save_saju_profile_usecase() -> SaveSajuProfileUseCase:
+    raise NotImplementedError
+
+
+@router.get("/profile", response_model=SajuProfileResponse)
+async def get_saju_profile(
+    account_id: int = Depends(get_current_account_id),
+    usecase: GetSajuProfileUseCase = Depends(get_saju_profile_usecase),
+) -> SajuProfileResponse:
+    """내 사주 요약 (일간·오행). 미보유 시 has_profile=false → FE가 확인 모달 출현."""
+    return await usecase.execute(account_id)
+
+
+@router.post("/profile", response_model=SajuProfileResponse)
+async def save_saju_profile(
+    body: SaveSajuProfileRequest,
+    account_id: int = Depends(get_current_account_id),
+    usecase: SaveSajuProfileUseCase = Depends(get_save_saju_profile_usecase),
+) -> SajuProfileResponse:
+    """생년월일시 확정 → 사주 계산(캐시/FortuneTeller) → 저장 → 요약 반환."""
+    return await usecase.execute(account_id, body)
 
 
 @router.get("/rooms", response_model=ChatRoomsResponse)

@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     chat_max_tokens: int = 1024         # 사주 모드 1000자(≈600~700토큰)+속마음 여유 (HM-BE-94)
     chat_history_window: int = 20       # 최근 N턴만 컨텍스트로 (Phase 2부터 서버 이력 권위)
     chat_temperature: float = 0.85
+    chat_saju_cache_ttl_seconds: int = 60 * 60 * 24 * 90  # 90일 (사주 불변, 안전 상한)
 
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore"

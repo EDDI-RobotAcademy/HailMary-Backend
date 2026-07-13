@@ -7,6 +7,7 @@ from app.domains.chat.application.usecase.stream_chat_usecase import _normalize_
 from app.domains.chat.domain.port.chat_client_port import ChatClientError, ChatClientPort
 from app.domains.chat.domain.port.chat_turn_store_port import ChatTurnStorePort, TurnBegin
 from app.domains.chat.domain.service.prompt_builder import build_system_prompt
+from app.domains.chat.domain.service.saju_summary import build_saju_context_block
 from app.domains.chat.domain.service.stream_splitter import split_inner_thought
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,8 @@ class StreamRoomChatUseCase:
     async def stream(
         self, *, room_id: int, begin: TurnBegin, request: SendRoomMessageRequest
     ) -> AsyncIterator[ChatStreamEvent]:
-        system_prompt = build_system_prompt(begin.character, request.mode)
+        saju_context = build_saju_context_block(begin.saju_raw) if begin.saju_raw else None
+        system_prompt = build_system_prompt(begin.character, request.mode, saju_context)
         turns = _normalize_turns(
             [(m.role, m.content) for m in begin.history], request.content
         )

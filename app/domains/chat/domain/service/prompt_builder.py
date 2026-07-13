@@ -70,7 +70,16 @@ def _persona_block(persona: ChatPersona) -> str:
     )
 
 
-def build_system_prompt(character: ChatCharacter, mode: ChatMode) -> str:
+_NO_SAJU_YET = """\
+[상대의 사주 정보 없음]
+아직 상대의 사주를 보지 못했다. 사주에 근거한 단정은 하지 마라.
+사주 풀이 요청이 오면, 캐릭터답게 "생년월일시를 확인해야 제대로 볼 수 있다"는 취지로
+자연스럽게 안내하라(입력 폼은 화면이 알아서 띄운다)."""
+
+
+def build_system_prompt(
+    character: ChatCharacter, mode: ChatMode, saju_context: str | None = None
+) -> str:
     persona: ChatPersona = PERSONAS[character]
     parts: list[str] = [
         f"너는 '{persona.name}'(이)다. {persona.background}",
@@ -80,6 +89,8 @@ def build_system_prompt(character: ChatCharacter, mode: ChatMode) -> str:
         _persona_block(persona),
         _OUTPUT_FORMAT,
         _QUALITY_GUARD,
+        # 사주 컨텍스트 — 보유 시 주입(H2/H3), 미보유 시 안전 폴백
+        saju_context if saju_context else _NO_SAJU_YET,
         _MODE_SAJU if mode is ChatMode.SAJU else _MODE_CASUAL,
     ]
     return "\n\n".join(parts)

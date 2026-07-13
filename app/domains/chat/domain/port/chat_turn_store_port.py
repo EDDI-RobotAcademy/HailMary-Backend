@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.domains.chat.domain.entity.chat_message import ChatMessage
 from app.domains.chat.domain.value_object.chat_enums import ChatCharacter, ChatMode
@@ -12,6 +12,7 @@ class TurnBegin:
     character: ChatCharacter
     user_message_id: int
     history: list[ChatMessage]  # user 메시지 직전까지, 오래된 순
+    saju_raw: dict[str, Any] | None = None  # 계정 사주 프로필(있으면) — 프롬프트 컨텍스트용
 
 
 class ChatTurnStorePort(Protocol):

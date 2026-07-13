@@ -162,6 +162,8 @@ from app.domains.chat.adapter.inbound.api.chat_router import (
     get_list_chat_messages_usecase,
     get_list_chat_rooms_usecase,
     get_open_chat_room_usecase,
+    get_saju_profile_usecase,
+    get_save_saju_profile_usecase,
     get_stream_chat_usecase,
     get_stream_room_chat_usecase,
 )
@@ -171,14 +173,22 @@ from app.domains.chat.adapter.inbound.api.chat_router import (
 from app.domains.chat.adapter.outbound.external.claude_chat_client import (
     ClaudeChatClient,
 )
+from app.domains.chat.adapter.outbound.external.saju_cache_adapter import SajuCacheAdapter
 from app.domains.chat.adapter.outbound.persistence.chat_turn_store import ChatTurnStore
 from app.domains.chat.adapter.outbound.persistence.conversation_repository import (
     ConversationRepository,
+)
+from app.domains.chat.adapter.outbound.persistence.saju_profile_repository import (
+    SajuProfileRepository,
 )
 from app.domains.chat.application.usecase.room_usecases import (
     ListChatMessagesUseCase,
     ListChatRoomsUseCase,
     OpenChatRoomUseCase,
+)
+from app.domains.chat.application.usecase.saju_profile_usecase import (
+    GetSajuProfileUseCase,
+    SaveSajuProfileUseCase,
 )
 from app.domains.chat.application.usecase.stream_chat_usecase import StreamChatUseCase
 from app.domains.chat.application.usecase.stream_room_chat_usecase import (
@@ -958,6 +968,22 @@ def _make_list_chat_messages_usecase(
     return ListChatMessagesUseCase(conversation_repo=ConversationRepository(session))
 
 
+def _make_get_saju_profile_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> GetSajuProfileUseCase:
+    return GetSajuProfileUseCase(profile_repo=SajuProfileRepository(session))
+
+
+def _make_save_saju_profile_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> SaveSajuProfileUseCase:
+    return SaveSajuProfileUseCase(
+        profile_repo=SajuProfileRepository(session),
+        saju_engine=_get_ft_adapter(),
+        cache=SajuCacheAdapter(_redis_cache_instance, _settings.chat_saju_cache_ttl_seconds),
+    )
+
+
 # ── 의존성 오버라이드 ──────────────────────────────────────────────────────────
 
 app.dependency_overrides[get_user_repository] = _make_user_repository
@@ -989,6 +1015,8 @@ app.dependency_overrides[get_stream_room_chat_usecase] = _make_stream_room_chat_
 app.dependency_overrides[get_list_chat_rooms_usecase] = _make_list_chat_rooms_usecase
 app.dependency_overrides[get_open_chat_room_usecase] = _make_open_chat_room_usecase
 app.dependency_overrides[get_list_chat_messages_usecase] = _make_list_chat_messages_usecase
+app.dependency_overrides[get_saju_profile_usecase] = _make_get_saju_profile_usecase
+app.dependency_overrides[get_save_saju_profile_usecase] = _make_save_saju_profile_usecase
 
 app.include_router(user_router)
 app.include_router(auth_router)
