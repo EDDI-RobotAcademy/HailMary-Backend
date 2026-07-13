@@ -7,8 +7,15 @@ from app.domains.chat.application.usecase.stream_chat_usecase import _normalize_
 from app.domains.chat.domain.port.chat_client_port import ChatClientError, ChatClientPort
 from app.domains.chat.domain.port.chat_turn_store_port import ChatTurnStorePort, TurnBegin
 from app.domains.chat.domain.service.prompt_builder import build_system_prompt
+from app.domains.chat.domain.service.saju_block_schema import (
+    TOOL_NAME,
+    lead_text,
+    saju_tool,
+)
 from app.domains.chat.domain.service.saju_summary import build_saju_context_block
 from app.domains.chat.domain.service.stream_splitter import split_inner_thought
+from app.domains.chat.domain.value_object.chat_enums import ChatMode
+from app.domains.chat.domain.value_object.chat_turn import ChatTurn
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +73,17 @@ class StreamRoomChatUseCase:
                 "character_id": begin.character.value,
             },
         )
+
+        # 사주 모드 + 프로필 보유 → 구조화 카드(버퍼드 tool-use). 프로필 없으면 아래
+        # 텍스트 스트리밍으로 폴백(_NO_SAJU_YET 프롬프트가 생년월일 안내).
+        if request.mode == ChatMode.SAJU and begin.saju_raw:
+            async for ev in self._emit_saju_block(
+                room_id=room_id, begin=begin, request=request,
+                system_prompt=system_prompt, turns=turns,
+            ):
+                yield ev
+            return
+
         acc = ""
         inner_thought: str | None = None
         try:
@@ -97,4 +115,43 @@ class StreamRoomChatUseCase:
         )
         yield ChatStreamEvent(
             event="done", data={"stop_reason": "end_turn", "message_id": message_id}
+        )
+
+    async def _emit_saju_block(
+        self,
+        *,
+        room_id: int,
+        begin: TurnBegin,
+        request: SendRoomMessageRequest,
+        system_prompt: str,
+        turns: list[ChatTurn],
+    ) -> AsyncIterator[ChatStreamEvent]:
+        """사주 모드 구조화 카드 — 강제 tool-use로 캐릭터별 블록 1회 생성 후 SSE 봉투로 전달."""
+        try:
+            block = await self._chat_client.generate_saju_block(
+                system_prompt=system_prompt,
+                turns=turns,
+                tool=saju_tool(begin.character),
+                tool_name=TOOL_NAME,
+                max_tokens=self._max_tokens,
+                temperature=self._temperature,
+            )
+        except ChatClientError as exc:
+            logger.warning("room 사주블록 실패 (room=%d): %s", room_id, exc)
+            yield ChatStreamEvent(
+                event="error",
+                data={"code": "UPSTREAM_ERROR", "message": "사주 풀이 생성에 실패했어요. 다시 시도해 주세요."},
+            )
+            return
+
+        yield ChatStreamEvent(event="saju_block", data={"block": block})
+        message_id = await self._turn_store.complete_turn(
+            conversation_id=room_id,
+            content=lead_text(begin.character, block),
+            mode=request.mode,
+            msg_type="saju",
+            saju_block=block,
+        )
+        yield ChatStreamEvent(
+            event="done", data={"stop_reason": "tool_use", "message_id": message_id}
         )

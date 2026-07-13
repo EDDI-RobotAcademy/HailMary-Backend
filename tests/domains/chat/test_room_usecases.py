@@ -88,9 +88,16 @@ class FakeConversationRepo:
 
 
 class FakeTurnStore:
-    def __init__(self, *, character: ChatCharacter, history: list[ChatMessage]) -> None:
+    def __init__(
+        self,
+        *,
+        character: ChatCharacter,
+        history: list[ChatMessage],
+        saju_raw: dict[str, object] | None = None,
+    ) -> None:
         self._character = character
         self._history = history
+        self._saju_raw = saju_raw
         self.begin_calls: list[dict[str, object]] = []
         self.completed: list[dict[str, object]] = []
 
@@ -101,20 +108,36 @@ class FakeTurnStore:
         if conversation_id == 999:
             raise ConversationNotFoundError("not found")
         self.begin_calls.append({"conversation_id": conversation_id, "content": content})
-        return TurnBegin(character=self._character, user_message_id=10, history=self._history)
+        return TurnBegin(
+            character=self._character, user_message_id=10,
+            history=self._history, saju_raw=self._saju_raw,
+        )
 
     async def complete_turn(
-        self, *, conversation_id: int, content: str, mode: ChatMode
+        self, *, conversation_id: int, content: str, mode: ChatMode,
+        msg_type: str = "text", saju_block: dict[str, object] | None = None,
     ) -> int:
-        self.completed.append({"conversation_id": conversation_id, "content": content})
+        self.completed.append({
+            "conversation_id": conversation_id, "content": content,
+            "msg_type": msg_type, "saju_block": saju_block,
+        })
         return 11
 
 
 class FakeChatClient:
-    def __init__(self, chunks: list[str], fail_after: int | None = None) -> None:
+    def __init__(
+        self,
+        chunks: list[str],
+        fail_after: int | None = None,
+        saju_block: dict[str, object] | None = None,
+        saju_fails: bool = False,
+    ) -> None:
         self._chunks = chunks
         self._fail_after = fail_after
+        self._saju_block = saju_block
+        self._saju_fails = saju_fails
         self.captured_turns: list[ChatTurn] | None = None
+        self.saju_calls = 0
 
     async def stream_chat(
         self, *, system_prompt: str, turns: list[ChatTurn],
@@ -125,6 +148,18 @@ class FakeChatClient:
             if self._fail_after is not None and i >= self._fail_after:
                 raise ChatClientError("boom")
             yield chunk
+
+    async def generate_saju_block(
+        self, *, system_prompt: str, turns: list[ChatTurn],
+        tool: dict[str, object], tool_name: str,
+        max_tokens: int, temperature: float,
+    ) -> dict[str, object]:
+        self.saju_calls += 1
+        self.captured_turns = turns
+        if self._saju_fails:
+            raise ChatClientError("saju boom")
+        assert self._saju_block is not None
+        return self._saju_block
 
 
 def _stream_usecase(client: FakeChatClient, store: FakeTurnStore) -> StreamRoomChatUseCase:
@@ -174,7 +209,10 @@ async def test_stream_room_persists_character_message_on_done() -> None:
     assert [e.event for e in events] == ["start", "delta", "delta", "done"]
     assert events[0].data["user_message_id"] == 10
     assert events[-1].data["message_id"] == 11
-    assert store.completed == [{"conversation_id": 5, "content": "그래서?"}]
+    assert store.completed == [{
+        "conversation_id": 5, "content": "그래서?",
+        "msg_type": "text", "saju_block": None,
+    }]
     # 이력 정규화: 선두 character(greet) 제거 → user 시작
     assert client.captured_turns is not None
     assert client.captured_turns[0].role == "user"
@@ -201,3 +239,60 @@ async def test_begin_raises_for_missing_room() -> None:
             room_id=999, account_id=1,
             request=SendRoomMessageRequest(mode=ChatMode.CASUAL, content="hi"),
         )
+
+
+async def test_saju_mode_with_profile_emits_structured_block() -> None:
+    block = {
+        "kind": "yeonu",
+        "scene": "달빛 아래 붉은 실이 보여.",
+        "evidence": [{"hanja": "丙火(병화)", "element": "화(火)", "note": "정열의 기운"}],
+        "advice": "먼저 다가가도 좋아.",
+    }
+    store = FakeTurnStore(
+        character=ChatCharacter.YEONU, history=[], saju_raw={"day": {"stem": "병"}}
+    )
+    client = FakeChatClient([], saju_block=block)
+    usecase = _stream_usecase(client, store)
+    req = SendRoomMessageRequest(mode=ChatMode.SAJU, content="내 연애운 봐줘.")
+
+    begin = await usecase.begin(room_id=5, account_id=1, request=req)
+    events = [ev async for ev in usecase.stream(room_id=5, begin=begin, request=req)]
+
+    assert [e.event for e in events] == ["start", "saju_block", "done"]
+    assert client.saju_calls == 1
+    assert events[1].data["block"] == block
+    assert events[-1].data["stop_reason"] == "tool_use"
+    # 리드 텍스트(scene) + 구조화 블록 영속화
+    assert store.completed == [{
+        "conversation_id": 5, "content": "달빛 아래 붉은 실이 보여.",
+        "msg_type": "saju", "saju_block": block,
+    }]
+
+
+async def test_saju_mode_without_profile_falls_back_to_text() -> None:
+    store = FakeTurnStore(character=ChatCharacter.YEONU, history=[], saju_raw=None)
+    client = FakeChatClient(["생년월일", "부터 알려줘"], saju_block={"kind": "yeonu"})
+    usecase = _stream_usecase(client, store)
+    req = SendRoomMessageRequest(mode=ChatMode.SAJU, content="사주 봐줘.")
+
+    begin = await usecase.begin(room_id=5, account_id=1, request=req)
+    events = [ev async for ev in usecase.stream(room_id=5, begin=begin, request=req)]
+
+    assert [e.event for e in events] == ["start", "delta", "delta", "done"]
+    assert client.saju_calls == 0  # 프로필 없으면 구조화 블록 미호출
+    assert store.completed[0]["msg_type"] == "text"
+
+
+async def test_saju_block_error_skips_persistence() -> None:
+    store = FakeTurnStore(
+        character=ChatCharacter.DOYOON, history=[], saju_raw={"day": {"stem": "경"}}
+    )
+    client = FakeChatClient([], saju_fails=True)
+    usecase = _stream_usecase(client, store)
+    req = SendRoomMessageRequest(mode=ChatMode.SAJU, content="사주 분석해줘.")
+
+    begin = await usecase.begin(room_id=5, account_id=1, request=req)
+    events = [ev async for ev in usecase.stream(room_id=5, begin=begin, request=req)]
+
+    assert [e.event for e in events] == ["start", "error"]
+    assert store.completed == []

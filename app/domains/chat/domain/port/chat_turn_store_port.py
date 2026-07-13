@@ -40,6 +40,11 @@ class ChatTurnStorePort(Protocol):
         conversation_id: int,
         content: str,
         mode: ChatMode,
+        msg_type: str = "text",
+        saju_block: dict[str, Any] | None = None,
     ) -> int:
-        """캐릭터 메시지 INSERT + 방 last_message_at 갱신. returns message id."""
+        """캐릭터 메시지 INSERT + 방 last_message_at 갱신. returns message id.
+
+        사주 모드는 msg_type="saju" + saju_block(구조화 dict) 저장, content=리드 텍스트.
+        """
         ...

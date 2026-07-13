@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,14 +99,17 @@ class ChatTurnStore:
         conversation_id: int,
         content: str,
         mode: ChatMode,
+        msg_type: str = "text",
+        saju_block: dict[str, Any] | None = None,
     ) -> int:
         async with self._session_factory() as session, session.begin():
             orm = ChatMessageORM(
                 conversation_id=conversation_id,
                 role="character",
-                msg_type="text",
+                msg_type=msg_type,
                 mode=mode.value,
                 content=content,
+                saju_block=saju_block,
             )
             session.add(orm)
             conv = (

@@ -1,5 +1,6 @@
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 from anthropic import (
@@ -56,3 +57,38 @@ class ClaudeChatClient:
             raise ChatClientError("Claude API 연결 실패") from exc
         except APIStatusError as exc:
             raise ChatClientError(f"Claude API status error: {exc.status_code}") from exc
+
+    async def generate_saju_block(
+        self,
+        *,
+        system_prompt: str,
+        turns: list[ChatTurn],
+        tool: dict[str, Any],
+        tool_name: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> dict[str, Any]:
+        # 사주 모드: 강제 tool_choice로 캐릭터별 스키마 dict를 버퍼드 생성 (스트리밍 아님).
+        messages = [{"role": t.role, "content": t.content} for t in turns]
+        try:
+            resp = await self._client.messages.create(  # type: ignore[call-overload]
+                model=self._model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt,
+                messages=messages,
+                tools=[tool],
+                tool_choice={"type": "tool", "name": tool_name},
+            )
+        except RateLimitError as exc:
+            raise ChatClientError("Claude API rate limit") from exc
+        except APIConnectionError as exc:
+            raise ChatClientError("Claude API 연결 실패") from exc
+        except APIStatusError as exc:
+            raise ChatClientError(f"Claude API status error: {exc.status_code}") from exc
+
+        for block in resp.content:
+            if block.type == "tool_use" and block.name == tool_name:
+                # block.input 은 스키마 검증된 dict — 방어적 복사
+                return dict(block.input)
+        raise ChatClientError("사주 블록 tool_use 응답 누락")
