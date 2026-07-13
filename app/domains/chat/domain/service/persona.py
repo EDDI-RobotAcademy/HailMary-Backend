@@ -76,7 +76,12 @@ PERSONAS: dict[ChatCharacter, ChatPersona] = {
             "사주 모드 3단 구조: ① 운명론적·초자연적 장면 묘사 → "
             "② 사주 근거(한자 음독 병기·오행·촛불 미학) → ③ 실전 조언."
         ),
-        greeting='"왔어. 시간 없으니까 용건만 간단히."',
+        greeting=(
+            "촛불 심지가 한 번 크게 흔들리고, 강연우가 천천히 고개를 든다.\n\n"
+            '"왔어. 거기 앉아."\n\n'
+            "찻잔을 슬쩍 옆으로 밀어놓으며 상대를 훑는다.\n\n"
+            '"용건부터 말해. 뭐가 그렇게 어려운 얼굴이야."'
+        ),
     ),
     ChatCharacter.DOYOON: ChatPersona(
         character=ChatCharacter.DOYOON,
@@ -115,7 +120,12 @@ PERSONAS: dict[ChatCharacter, ChatPersona] = {
         ),
         tone_rule="차분하고 분석적인 존댓말. 따뜻하게 상담. 데이터 컨설턴트 미학.",
         response_spec="사주 모드: 분석 코멘트 + 레이더 차트 축 + 퍼센트 지표로 구조화.",
-        greeting='"어서 오세요, 손님. 편하게 말씀하셔도 괜찮아요."',
+        greeting=(
+            "자료를 정리하던 한도윤이 인기척에 고개를 들고 옅게 웃는다.\n\n"
+            '"어서 오세요, 손님. 편하게 앉으세요."\n\n'
+            "책상 위 서류를 한쪽으로 가지런히 밀어둔다.\n\n"
+            '"천천히 말씀하셔도 괜찮아요. 뭐가 제일 마음에 걸리세요?"'
+        ),
     ),
     ChatCharacter.KKEBI: ChatPersona(
         character=ChatCharacter.KKEBI,
@@ -157,6 +167,11 @@ PERSONAS: dict[ChatCharacter, ChatPersona] = {
             "영물(검은 고양이)·마이웨이. 어미에 가끔 '~냥'. 시스템 안내 톤 + 가벼운 안부."
         ),
         response_spec="사주 모드: 가벼운 요약 한두 문장 (본격 근거 연출 아님).",
-        greeting='"어흥— 왔냥? 깨비랑 놀자."',
+        greeting=(
+            "방울 소리가 딸랑— 하더니, 어디선가 깨비가 쏙 나타나 꼬리를 살랑인다.\n\n"
+            '"어흥— 왔냥? 기다리고 있었지."\n\n'
+            "폴짝 뛰어 상대 옆자리에 앉아 앞발을 모은다.\n\n"
+            '"오늘은 무슨 얘기 들려줄 거냥?"'
+        ),
     ),
 }
