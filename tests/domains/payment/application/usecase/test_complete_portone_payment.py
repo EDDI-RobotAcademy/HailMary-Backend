@@ -18,6 +18,9 @@ from app.domains.payment.application.usecase.complete_portone_payment_usecase im
     PortOneVerificationError,
 )
 from app.domains.payment.domain.entity.payment import Payment
+from app.domains.payment.domain.port.payment_repository_port import (
+    DuplicatePaymentError,
+)
 from app.domains.payment.domain.port.portone_payment_port import PortOnePaymentInfo
 from app.domains.payment.domain.value_object.payment_status import (
     CharacterCode,
@@ -205,6 +208,21 @@ async def test_webhook_verifies_and_syncs() -> None:
     await usecase.handle_webhook(raw_body="{}", headers={})
 
     assert len(repo.saved) == 1, "웹훅이 결제를 동기화해 발급"
+
+
+async def test_complete_duplicate_grant_is_idempotent() -> None:
+    # FE 결제완료 호출 + 포트원 웹훅이 동시에 발급 → 진 쪽은 repo.save에서
+    # DuplicatePaymentError → 500이 아니라 "PAID"(idempotent)로 처리돼야 함 (prod 사고 회귀).
+    class DupRepo(FakeRepo):
+        async def save(self, payment: Payment) -> Payment:
+            raise DuplicatePaymentError("order_id 중복")
+
+    portone = FakePortOne(_info())
+    usecase = _usecase(portone=portone, repo=DupRepo(), composer=FakeComposer())
+
+    result = await usecase.complete(_PAYMENT_ID)
+
+    assert result == "PAID"
 
 
 async def test_webhook_unverified_noop() -> None:

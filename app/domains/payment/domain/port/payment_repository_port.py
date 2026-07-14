@@ -5,6 +5,13 @@ from app.domains.payment.domain.entity.payment import Payment
 from app.domains.payment.domain.value_object.payment_status import PaymentStatus
 
 
+class DuplicatePaymentError(Exception):
+    """order_id UNIQUE 위반 — 같은 결제가 동시에 두 번 발급 시도됨
+    (FE 결제완료 호출 + 포트원 웹훅 레이스). 구현체(Repository)가 IntegrityError를
+    이 도메인 예외로 번역하고, UseCase는 이를 잡아 idempotent(이미 발급됨) 처리한다.
+    """
+
+
 class PaymentRepositoryPort(ABC):
     @abstractmethod
     async def save(self, payment: Payment) -> Payment: ...

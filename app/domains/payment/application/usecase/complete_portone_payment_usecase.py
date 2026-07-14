@@ -22,6 +22,7 @@ from app.domains.payment.application.payment_ports import (
 from app.domains.payment.application.usecase._grant_paid_report import grant_paid_report
 from app.domains.payment.domain.port.analytics_port import AnalyticsPort
 from app.domains.payment.domain.port.payment_repository_port import (
+    DuplicatePaymentError,
     PaymentRepositoryPort,
 )
 from app.domains.payment.domain.port.portone_payment_port import PortOnePaymentPort
@@ -91,25 +92,35 @@ class CompletePortOnePaymentUseCase:
         if await self._already_done(payment_id):
             return "PAID"
 
-        await grant_paid_report(
-            repo=self._repo,
-            user_id=user_id,
-            character=character,
-            customer_email=customer_email,
-            amount=info.amount,
-            order_id=payment_id,
-            payment_key=f"portone-{payment_id}",
-            paid_report_creator=None,
-            saju_hash_resolver=None,
-            analytics=self._analytics,
-            user_demographics=self._user_demographics,
-            log_tag="PORTONE",
-            method="portone_kakaopay",
-            background_composer=self._background_composer,
-            account_id=account_id if account_id is not None else custom.get("accountId"),
-            device_id=custom.get("deviceId"),
-            session_id=custom.get("sessionId"),
-        )
+        try:
+            await grant_paid_report(
+                repo=self._repo,
+                user_id=user_id,
+                character=character,
+                customer_email=customer_email,
+                amount=info.amount,
+                order_id=payment_id,
+                payment_key=f"portone-{payment_id}",
+                paid_report_creator=None,
+                saju_hash_resolver=None,
+                analytics=self._analytics,
+                user_demographics=self._user_demographics,
+                log_tag="PORTONE",
+                method="portone_kakaopay",
+                background_composer=self._background_composer,
+                account_id=account_id
+                if account_id is not None
+                else custom.get("accountId"),
+                device_id=custom.get("deviceId"),
+                session_id=custom.get("sessionId"),
+            )
+        except DuplicatePaymentError:
+            # FE 결제완료 호출과 포트원 웹훅이 동시에 발급 시도 → 진 쪽은 여기.
+            # 다른 요청이 이미 발급 완료 → idempotent 성공 처리(중복 합성/500 방지).
+            logger.info(
+                "[PORTONE] 중복 발급 감지(동시 complete/webhook) — 이미 발급됨 처리 id=%s",
+                payment_id,
+            )
         return "PAID"
 
     async def handle_webhook(self, *, raw_body: str, headers: dict[str, str]) -> None:
