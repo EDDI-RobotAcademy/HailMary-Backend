@@ -28,9 +28,13 @@ class PaymentRepository(PaymentRepositoryPort):
                 self._session.add(orm)
                 await self._session.flush()
         except IntegrityError as e:
-            raise DuplicatePaymentError(
-                f"이미 존재하는 결제 (order_id={payment.order_id})"
-            ) from e
+            # order_id UNIQUE 충돌(FE 결제완료 + 웹훅 동시 발급)만 도메인 예외로 번역.
+            # 그 외 무결성 위반(FK/NOT NULL 등)은 원본 그대로 전파 — 거짓 PAID 방지.
+            if "ix_payments_order_id" in str(e):
+                raise DuplicatePaymentError(
+                    f"이미 존재하는 결제 (order_id={payment.order_id})"
+                ) from e
+            raise
         return PaymentMapper.to_entity(orm)
 
     async def find_by_order_id(self, order_id: str) -> Payment | None:

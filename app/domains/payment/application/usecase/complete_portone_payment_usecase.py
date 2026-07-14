@@ -115,28 +115,32 @@ class CompletePortOnePaymentUseCase:
                 session_id=custom.get("sessionId"),
             )
         except DuplicatePaymentError:
-            # FE 결제완료 호출과 포트원 웹훅이 동시에 발급 시도 → 진 쪽은 여기.
-            # 다른 요청이 이미 발급 완료 → idempotent 성공 처리(중복 합성/500 방지).
+            # order_id 충돌 = 다른 요청(complete/webhook)이 이미 발급. 실제 DONE 확인 후
+            # idempotent 성공. DONE이 아니면 예외 상황이므로 재raise(거짓 PAID 방지).
+            if not await self._already_done(payment_id):
+                raise
             logger.info(
-                "[PORTONE] 중복 발급 감지(동시 complete/webhook) — 이미 발급됨 처리 id=%s",
+                "[PORTONE] 중복 발급(동시 complete/webhook) — 이미 발급됨 처리 id=%s",
                 payment_id,
             )
         return "PAID"
 
     async def handle_webhook(self, *, raw_body: str, headers: dict[str, str]) -> None:
-        """포트원 웹훅 — 서명 검증 후 sync. 어떤 실패에도 예외를 밖으로 던지지 않음
-        (라우터가 항상 200을 반환해 재시도 폭주를 막기 위함)."""
+        """포트원 웹훅 — 서명 검증 후 sync.
+
+        PortOneVerificationError(영구 실패: 미완료/금액불일치 등)는 흡수해 정상 반환
+        → 라우터 200(재시도 무의미). 그 외 일시 오류(DB blip 등)는 **전파** → 라우터가
+        500 → 포트원이 재시도(모바일 발급 유실 방지). verify_webhook 자체 오류도 전파.
+        """
+        payment_id = await self._portone.verify_webhook(
+            raw_body=raw_body, headers=headers
+        )
+        if payment_id is None:
+            return
         try:
-            payment_id = await self._portone.verify_webhook(
-                raw_body=raw_body, headers=headers
-            )
-            if payment_id is None:
-                return
             await self.complete(payment_id)
         except PortOneVerificationError as e:
-            logger.warning("[PORTONE webhook] 검증 실패: %s", e)
-        except Exception:  # noqa: BLE001 — 웹훅은 항상 흡수 (재시도 무의미)
-            logger.exception("[PORTONE webhook] 처리 중 예외")
+            logger.warning("[PORTONE webhook] 검증 실패(영구, 흡수): %s", e)
 
     async def _already_done(self, payment_id: str) -> bool:
         existing = await self._repo.find_by_order_id(payment_id)
