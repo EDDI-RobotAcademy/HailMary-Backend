@@ -125,6 +125,7 @@ from app.domains.auth.adapter.inbound.api.auth_router import (
     get_me_usecase,
     get_optional_account_id,
     get_social_login_usecase,
+    get_test_login_usecase,
     get_token_issuer,
     get_update_last_used_usecase,
 )
@@ -150,12 +151,49 @@ from app.domains.auth.application.usecase.get_me_usecase import GetMeUseCase
 from app.domains.auth.application.usecase.social_login_usecase import (
     SocialLoginUseCase,
 )
+from app.domains.auth.application.usecase.test_login_usecase import TestLoginUseCase
 from app.domains.auth.application.usecase.update_last_used_usecase import (
     UpdateLastUsedUseCase,
 )
 from app.domains.auth.domain.port.oauth_client_port import OAuthClientPort
 from app.domains.auth.domain.port.token_port import TokenDecodeError
 from app.domains.auth.domain.value_object.provider import Provider
+from app.domains.chat.adapter.inbound.api.chat_router import (
+    get_list_chat_messages_usecase,
+    get_list_chat_rooms_usecase,
+    get_open_chat_room_usecase,
+    get_saju_profile_usecase,
+    get_save_saju_profile_usecase,
+    get_stream_chat_usecase,
+    get_stream_room_chat_usecase,
+)
+from app.domains.chat.adapter.inbound.api.chat_router import (
+    router as chat_router,
+)
+from app.domains.chat.adapter.outbound.external.claude_chat_client import (
+    ClaudeChatClient,
+)
+from app.domains.chat.adapter.outbound.external.saju_cache_adapter import SajuCacheAdapter
+from app.domains.chat.adapter.outbound.persistence.chat_turn_store import ChatTurnStore
+from app.domains.chat.adapter.outbound.persistence.conversation_repository import (
+    ConversationRepository,
+)
+from app.domains.chat.adapter.outbound.persistence.saju_profile_repository import (
+    SajuProfileRepository,
+)
+from app.domains.chat.application.usecase.room_usecases import (
+    ListChatMessagesUseCase,
+    ListChatRoomsUseCase,
+    OpenChatRoomUseCase,
+)
+from app.domains.chat.application.usecase.saju_profile_usecase import (
+    GetSajuProfileUseCase,
+    SaveSajuProfileUseCase,
+)
+from app.domains.chat.application.usecase.stream_chat_usecase import StreamChatUseCase
+from app.domains.chat.application.usecase.stream_room_chat_usecase import (
+    StreamRoomChatUseCase,
+)
 from app.domains.kkebi.adapter.inbound.api.kkebi_router import (
     get_daily_fortune_usecase,
     get_saved_daily_result_usecase,
@@ -196,10 +234,17 @@ from app.domains.payment.adapter.inbound.api.payment_router import (
 from app.domains.payment.adapter.inbound.api.payment_router import (
     router as payment_router,
 )
+from app.domains.payment.adapter.inbound.api.portone_router import (
+    get_complete_portone_usecase,
+)
+from app.domains.payment.adapter.inbound.api.portone_router import (
+    router as portone_router,
+)
 from app.domains.payment.adapter.outbound.external.amplitude_adapter import (
     AmplitudeAnalyticsAdapter,
 )
 from app.domains.payment.adapter.outbound.external.payapp_client import PayAppClient
+from app.domains.payment.adapter.outbound.external.portone_client import PortOneClient
 from app.domains.payment.adapter.outbound.persistence.coupon_repository import (
     CouponRepository,
 )
@@ -211,6 +256,9 @@ from app.domains.payment.adapter.outbound.user_demographics_adapter import (
     UserDemographicsAdapter,
 )
 from app.domains.payment.adapter.outbound.user_lookup_adapter import UserLookupAdapter
+from app.domains.payment.application.usecase.complete_portone_payment_usecase import (
+    CompletePortOnePaymentUseCase,
+)
 from app.domains.payment.application.usecase.dev_bypass_payment_usecase import (
     DevBypassPaymentUseCase,
 )
@@ -365,6 +413,19 @@ def _make_social_login_usecase(
         oauth_clients=_oauth_clients,
         account_repo=AccountRepository(session),
         token_issuer=_get_token_provider(),
+    )
+
+
+def _make_test_login_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> TestLoginUseCase:
+    # 카드사 심사용. test_login_enabled=False면 usecase가 404(없는 것처럼) 반환.
+    return TestLoginUseCase(
+        account_repo=AccountRepository(session),
+        token_issuer=_get_token_provider(),
+        enabled=_settings.test_login_enabled,
+        username=_settings.test_login_username,
+        password=_settings.test_login_password,
     )
 
 
@@ -644,6 +705,23 @@ def _build_paid_report_pipeline(
     return create_paid_report_usecase, saju_hash_resolver, user_lookup, user_demographics, analytics
 
 
+class _TestAccountChecker:
+    """request_payment용 어댑터 — test_login_enabled AND account.provider==TEST 면 테스트 계정.
+
+    플래그 off면 항상 False → 심사 종료 후 0원 발급 경로 완전 차단.
+    """
+
+    def __init__(self, account_repo: AccountRepository, enabled: bool) -> None:
+        self._account_repo = account_repo
+        self._enabled = enabled
+
+    async def is_test_account(self, account_id: int | None) -> bool:
+        if not self._enabled or account_id is None:
+            return False
+        account = await self._account_repo.find_by_id(account_id)
+        return account is not None and account.provider == Provider.TEST
+
+
 def _make_request_payment_usecase(
     session: AsyncSession = Depends(_get_session),
 ) -> RequestPaymentUseCase:
@@ -652,6 +730,10 @@ def _make_request_payment_usecase(
         gateway=_make_payapp_client(),
         repo=PaymentRepository(session),
         user_lookup=UserLookupAdapter(user_repo=user_repo),
+        account_checker=_TestAccountChecker(
+            AccountRepository(session), _settings.test_login_enabled
+        ),
+        background_composer=_compose_report_background,
     )
 
 
@@ -673,6 +755,27 @@ def _make_handle_feedback_usecase(
         background_composer=_compose_report_background,
         analytics=analytics,
         user_demographics=user_demographics,
+    )
+
+
+def _make_complete_portone_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> CompletePortOnePaymentUseCase:
+    # 합성은 백그라운드(_compose_report_background, 자기 세션) — 요청 세션엔 analytics/demographics 만.
+    _creator, _resolver, _ul, user_demographics, analytics = _build_paid_report_pipeline(
+        session
+    )
+    return CompletePortOnePaymentUseCase(
+        portone=PortOneClient(
+            api_secret=_settings.portone_api_secret or "",
+            webhook_secret=_settings.portone_webhook_secret,
+        ),
+        repo=PaymentRepository(session),
+        user_lookup=UserLookupAdapter(user_repo=UserRepository(session)),
+        background_composer=_compose_report_background,
+        analytics=analytics,
+        user_demographics=user_demographics,
+        allow_test_channel=_settings.portone_allow_test_channel,
     )
 
 
@@ -809,6 +912,78 @@ def _make_get_paid_report_usecase(
     )
 
 
+# ── Chat Domain UseCase 팩토리 (도화선 2.0, HM-BE-86·87) ─────────────────────
+
+# 스트리밍 클라이언트는 모듈 싱글턴 — 요청마다 AsyncAnthropic 재생성 방지.
+_chat_client_instance: ClaudeChatClient | None = (
+    ClaudeChatClient(api_key=_settings.claude_api_key, model=_settings.claude_model)
+    if _settings.chat_enabled and _settings.claude_api_key
+    else None
+)
+
+
+def _make_stream_chat_usecase() -> StreamChatUseCase:
+    # chat_enabled=True + claude_api_key 설정 시에만 라우터가 등록되므로 여기 도달 시 존재 보장.
+    if _chat_client_instance is None:
+        raise HTTPException(status_code=503, detail="chat 미설정 (chat_enabled/claude_api_key)")
+    return StreamChatUseCase(
+        chat_client=_chat_client_instance,
+        max_tokens=_settings.chat_max_tokens,
+        history_window=_settings.chat_history_window,
+        temperature=_settings.chat_temperature,
+    )
+
+
+# 스트리밍 턴 영속화 — 요청 세션이 아닌 자체 단명 세션 (CHAT_SSOT.md SSE 계약).
+_chat_turn_store = ChatTurnStore(AsyncSessionLocal)
+
+
+def _make_stream_room_chat_usecase() -> StreamRoomChatUseCase:
+    if _chat_client_instance is None:
+        raise HTTPException(status_code=503, detail="chat 미설정 (chat_enabled/claude_api_key)")
+    return StreamRoomChatUseCase(
+        chat_client=_chat_client_instance,
+        turn_store=_chat_turn_store,
+        max_tokens=_settings.chat_max_tokens,
+        history_window=_settings.chat_history_window,
+        temperature=_settings.chat_temperature,
+    )
+
+
+def _make_list_chat_rooms_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> ListChatRoomsUseCase:
+    return ListChatRoomsUseCase(conversation_repo=ConversationRepository(session))
+
+
+def _make_open_chat_room_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> OpenChatRoomUseCase:
+    return OpenChatRoomUseCase(conversation_repo=ConversationRepository(session))
+
+
+def _make_list_chat_messages_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> ListChatMessagesUseCase:
+    return ListChatMessagesUseCase(conversation_repo=ConversationRepository(session))
+
+
+def _make_get_saju_profile_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> GetSajuProfileUseCase:
+    return GetSajuProfileUseCase(profile_repo=SajuProfileRepository(session))
+
+
+def _make_save_saju_profile_usecase(
+    session: AsyncSession = Depends(_get_session),
+) -> SaveSajuProfileUseCase:
+    return SaveSajuProfileUseCase(
+        profile_repo=SajuProfileRepository(session),
+        saju_engine=_get_ft_adapter(),
+        cache=SajuCacheAdapter(_redis_cache_instance, _settings.chat_saju_cache_ttl_seconds),
+    )
+
+
 # ── 의존성 오버라이드 ──────────────────────────────────────────────────────────
 
 app.dependency_overrides[get_user_repository] = _make_user_repository
@@ -822,6 +997,7 @@ app.dependency_overrides[get_archive_usecase] = _make_get_archive_usecase
 app.dependency_overrides[get_request_payment_usecase] = _make_request_payment_usecase
 app.dependency_overrides[get_handle_feedback_usecase] = _make_handle_feedback_usecase
 app.dependency_overrides[get_payment_status_usecase] = _make_payment_status_usecase
+app.dependency_overrides[get_complete_portone_usecase] = _make_complete_portone_usecase
 app.dependency_overrides[get_update_email_usecase] = _make_update_email_usecase
 app.dependency_overrides[get_dev_bypass_usecase] = _make_dev_bypass_usecase
 app.dependency_overrides[get_redeem_coupon_usecase] = _make_redeem_coupon_usecase
@@ -829,17 +1005,32 @@ app.dependency_overrides[get_validate_coupon_usecase] = _make_validate_coupon_us
 app.dependency_overrides[get_frontend_base_url] = lambda: _settings.frontend_base_url
 app.dependency_overrides[get_paid_report_usecase] = _make_get_paid_report_usecase
 app.dependency_overrides[get_social_login_usecase] = _make_social_login_usecase
+app.dependency_overrides[get_test_login_usecase] = _make_test_login_usecase
 app.dependency_overrides[get_me_usecase] = _make_get_me_usecase
 app.dependency_overrides[get_update_last_used_usecase] = _make_update_last_used_usecase
 app.dependency_overrides[get_delete_account_usecase] = _make_delete_account_usecase
 app.dependency_overrides[get_token_issuer] = _get_token_provider
+app.dependency_overrides[get_stream_chat_usecase] = _make_stream_chat_usecase
+app.dependency_overrides[get_stream_room_chat_usecase] = _make_stream_room_chat_usecase
+app.dependency_overrides[get_list_chat_rooms_usecase] = _make_list_chat_rooms_usecase
+app.dependency_overrides[get_open_chat_room_usecase] = _make_open_chat_room_usecase
+app.dependency_overrides[get_list_chat_messages_usecase] = _make_list_chat_messages_usecase
+app.dependency_overrides[get_saju_profile_usecase] = _make_get_saju_profile_usecase
+app.dependency_overrides[get_save_saju_profile_usecase] = _make_save_saju_profile_usecase
 
 app.include_router(user_router)
 app.include_router(auth_router)
 app.include_router(archive_router)
 app.include_router(payment_router)
+# 포트원 카카오페이 — portone_enabled=True 일 때만 등록 (미설정 시 엔드포인트 404, 완전 차단).
+if _settings.portone_enabled:
+    app.include_router(portone_router)
 app.include_router(paid_report_router)
 app.include_router(kkebi_router)
+# 도화선 2.0 캐릭터 챗 — chat_enabled=True 일 때만 등록 (미설정 시 404, 완전 차단).
+# staging은 main push 자동 배포라 이 게이트가 미완성 노출 방어선 (CHAT_SSOT.md).
+if _settings.chat_enabled:
+    app.include_router(chat_router)
 app.include_router(paid_report_share_router)
 # 무료 쿠폰 — dev bypass 와 달리 환경 가드 없이 항상 등록(prod 포함).
 # 유효 쿠폰 코드 자체가 가드 역할 → _DEV_BYPASS_ENVS 분기에 넣지 말 것.
